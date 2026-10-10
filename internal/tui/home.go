@@ -18,13 +18,13 @@ func newHomePage(cl *vaultapi.Client) *homePage {
 	return &homePage{
 		cl: cl,
 		items: []string{
-			"Secret Engines",
 			"ACL Policies",
 			"Auth Methods",
-			"Token Info",
-			"Server Status",
-			"Leases",
 			"Identity",
+			"Leases",
+			"Secret Engines",
+			"Server Status",
+			"Token Info",
 		},
 	}
 }
@@ -48,19 +48,19 @@ func (p *homePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		case "enter":
 			switch p.cur {
 			case 0:
-				return p, Push(newEnginesPage(p.cl))
-			case 1:
 				return p, Push(newPoliciesPage(p.cl))
-			case 2:
+			case 1:
 				return p, Push(newAuthPage(p.cl))
-			case 3:
-				return p, Push(newTokenPage(p.cl))
-			case 4:
-				return p, Push(newServerStatusPage(p.cl))
-			case 5:
-				return p, Push(newLeasesPage(p.cl, ""))
-			case 6:
+			case 2:
 				return p, Push(newIdentityPage(p.cl))
+			case 3:
+				return p, Push(newLeasesPage(p.cl, ""))
+			case 4:
+				return p, Push(newEnginesPage(p.cl))
+			case 5:
+				return p, Push(newServerStatusPage(p.cl))
+			case 6:
+				return p, Push(newTokenPage(p.cl))
 			}
 		}
 	}

@@ -138,13 +138,33 @@ func wantView(t *testing.T, m tea.Model, wants ...string) {
 	}
 }
 
+// openMenu resets the home cursor and opens the named menu item.
+func openMenu(t *testing.T, m tea.Model, item string) tea.Model {
+	t.Helper()
+	items := []string{"ACL Policies", "Auth Methods", "Identity", "Leases", "Secret Engines", "Server Status", "Token Info"}
+	idx := -1
+	for i, s := range items {
+		if s == item {
+			idx = i
+		}
+	}
+	if idx < 0 {
+		t.Fatalf("unknown menu item %q", item)
+	}
+	m = homeReset(t, m)
+	for i := 0; i < idx; i++ {
+		m = typeKeys(t, m, "down")
+	}
+	return typeKeys(t, m, "enter")
+}
+
 func TestEndToEnd(t *testing.T) {
 	cl := testVault(t)
 	m := tea.Model(New(cl))
 	m = drive(t, m, tea.WindowSizeMsg{Width: 120, Height: 30})
 
 	// Home -> Engines
-	m = typeKeys(t, m, "enter")
+	m = openMenu(t, m, "Secret Engines")
 	wantView(t, m, "secret/", "legacy/", "transit/", "pki/", "cubbyhole/")
 
 	// Engines sorted: cubbyhole(0) identity(1) legacy(2) pki(3) secret(4) sys(5) transit(6)
@@ -162,7 +182,8 @@ func TestEndToEnd(t *testing.T) {
 	wantView(t, m, "Secret Engines")
 
 	// KV v1: legacy/
-	m = typeKeys(t, m, "enter", "down", "down", "enter")
+	m = openMenu(t, m, "Secret Engines")
+	m = typeKeys(t, m, "down", "down", "enter")
 	wantView(t, m, "[Config]", "Browse")
 	m = typeKeys(t, m, "right")
 	wantView(t, m, "creds", "misc")
@@ -171,7 +192,8 @@ func TestEndToEnd(t *testing.T) {
 	m = typeKeys(t, m, "esc", "esc", "esc", "esc")
 
 	// Transit keys
-	m = typeKeys(t, m, "enter", "down", "down", "down", "down", "down", "down", "enter")
+	m = openMenu(t, m, "Secret Engines")
+	m = typeKeys(t, m, "down", "down", "down", "down", "down", "down", "enter")
 	wantView(t, m, "[Config]", "Keys")
 	m = typeKeys(t, m, "right")
 	wantView(t, m, "aesguy", "eddy")
@@ -180,7 +202,8 @@ func TestEndToEnd(t *testing.T) {
 	m = typeKeys(t, m, "esc", "esc", "esc")
 
 	// PKI roles
-	m = typeKeys(t, m, "enter", "down", "down", "down", "enter")
+	m = openMenu(t, m, "Secret Engines")
+	m = typeKeys(t, m, "down", "down", "down", "enter")
 	wantView(t, m, "[Config]", "Roles")
 	m = typeKeys(t, m, "right")
 	wantView(t, m, "testrole")
@@ -189,7 +212,7 @@ func TestEndToEnd(t *testing.T) {
 	m = typeKeys(t, m, "esc", "esc", "esc", "esc")
 
 	// Policies
-	m = typeKeys(t, m, "down", "enter")
+	m = openMenu(t, m, "ACL Policies")
 	wantView(t, m, "default", "root", "team-apps", "jwt-signer", "jwt-reader")
 	m = typeKeys(t, m, "down", "down", "down", "down", "enter") // team-apps
 	wantView(t, m, "capabilities", "secret/data/apps/*")
@@ -197,8 +220,7 @@ func TestEndToEnd(t *testing.T) {
 	wantView(t, m, "Secret Engines")
 
 	// Reset the persistent home cursor, then auth methods: jwt roles
-	m = homeReset(t, m)
-	m = typeKeys(t, m, "down", "down", "enter")
+	m = openMenu(t, m, "Auth Methods")
 	wantView(t, m, "jwt/", "token/")
 	m = typeKeys(t, m, "enter") // jwt/ sorts before token/
 	wantView(t, m, "[Config]", "Roles")
@@ -212,8 +234,7 @@ func TestEndToEnd(t *testing.T) {
 	wantView(t, m, "Secret Engines")
 
 	// Token info + capabilities check
-	m = homeReset(t, m)
-	m = typeKeys(t, m, "down", "down", "down", "enter")
+	m = openMenu(t, m, "Token Info")
 	wantView(t, m, "display_name: token", "policies: root", "orphan: true")
 	m = typeKeys(t, m, "secret/data/jwt/service-a")
 	m = typeKeys(t, m, "enter")
@@ -222,25 +243,23 @@ func TestEndToEnd(t *testing.T) {
 	m = typeKeys(t, m, "esc") // back to home
 
 	// Server status
-	m = homeReset(t, m)
-	m = typeKeys(t, m, "down", "down", "down", "down", "enter")
+	m = openMenu(t, m, "Server Status")
 	wantView(t, m, "sealed: false", "storage_type: inmem", "standby: false")
 	m = typeKeys(t, m, "esc")
 
 	// KV v2 version history: apps/api has two versions
-	m = homeReset(t, m)
-	m = typeKeys(t, m, "enter", "down", "down", "down", "down", "enter") // secret/ engine detail
-	m = typeKeys(t, m, "right")                                          // browse tab
-	m = typeKeys(t, m, "enter")                                          // into apps/
-	m = typeKeys(t, m, "v")                                              // versions of api (cursor on api)
+	m = openMenu(t, m, "Secret Engines")
+	m = typeKeys(t, m, "down", "down", "down", "down", "enter") // secret/ engine detail
+	m = typeKeys(t, m, "right")                                 // browse tab
+	m = typeKeys(t, m, "enter")                                 // into apps/
+	m = typeKeys(t, m, "v")                                     // versions of api (cursor on api)
 	wantView(t, m, "v2", "v1", "current")
 	m = typeKeys(t, m, "down", "enter") // view version 1
 	wantView(t, m, "version: 1", "db_host: db01.internal")
 	m = typeKeys(t, m, "esc", "esc", "esc", "esc", "esc") // back to home
 
 	// Leases: drill to the non-expiring root token lease
-	m = homeReset(t, m)
-	m = typeKeys(t, m, "down", "down", "down", "down", "down", "enter")
+	m = openMenu(t, m, "Leases")
 	wantView(t, m, "auth/")
 	m = typeKeys(t, m, "enter") // into auth/
 	wantView(t, m, "jwt/", "token/")
@@ -251,8 +270,7 @@ func TestEndToEnd(t *testing.T) {
 	m = typeKeys(t, m, "esc", "esc", "esc", "esc", "esc", "esc")
 
 	// Identity: entities and groups with policy links
-	m = homeReset(t, m)
-	m = typeKeys(t, m, "down", "down", "down", "down", "down", "down", "enter")
+	m = openMenu(t, m, "Identity")
 	wantView(t, m, "[Entities]", "bob", "service-a")
 	m = typeKeys(t, m, "enter") // bob
 	wantView(t, m, "linked policies:", "[1] jwt-reader", "[2] jwt-signer", "email: bob@example.com")
