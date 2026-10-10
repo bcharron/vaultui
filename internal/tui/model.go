@@ -60,11 +60,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.w, a.h = msg.Width, msg.Height
-		contentH := msg.Height - 2 // header + footer
-		if contentH < 1 {
-			contentH = 1
-		}
-		return a.broadcast(resizeMsg{msg.Width, contentH})
+		return a.broadcast(a.dims())
 
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -84,9 +80,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pushMsg:
 		a.stack = append(a.stack, msg.page)
 		var cmd tea.Cmd
-		if a.w > 0 && a.h > 2 {
-			msg.page, cmd = msg.page.Update(resizeMsg{a.w, a.h - 2})
-		}
+		msg.page, cmd = msg.page.Update(a.dims())
 		return a, tea.Batch(cmd, msg.page.Init())
 
 	case popMsg:
@@ -110,11 +104,25 @@ func (a App) broadcast(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return a, tea.Batch(cmds...)
 }
 
+// dims returns the current content-area dimensions, falling back to a
+// sane default before the first WindowSizeMsg arrives (or if the
+// terminal never reports one, e.g. when output is not a TTY).
+func (a App) dims() resizeMsg {
+	w, h := a.w, a.h-2
+	if w <= 0 {
+		w = 80
+	}
+	if h < 1 {
+		h = 22
+	}
+	return resizeMsg{w, h}
+}
+
 func (a App) View() string {
 	header := topBarStyle.Render("vaultui") + " " +
 		dimStyle.Render(a.addr+"  "+a.token) +
 		breadStyle.Render("  "+a.top().Header())
-	content := lipgloss.NewStyle().Width(a.w).Height(a.h - 2).Render(a.top().View())
+	content := lipgloss.NewStyle().Width(a.w).Height(max(a.h-2, 1)).Render(a.top().View())
 	footer := bottomStyle.Render(a.top().Hints())
 	return header + "\n" + content + "\n" + footer
 }

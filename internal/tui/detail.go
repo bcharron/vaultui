@@ -103,7 +103,11 @@ func (p *detailPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 
 func (p *detailPage) layout() {
 	p.vp.Width = p.w
-	p.vp.Height = p.h - p.linksHeight()
+	h := p.h - p.linksHeight()
+	if h < 1 {
+		h = 1
+	}
+	p.vp.Height = h
 	p.vp.SetContent(wrapText(p.content, p.w))
 }
 

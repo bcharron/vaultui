@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"vaultui/internal/vault"
@@ -25,28 +26,37 @@ func writeMap(b *strings.Builder, m map[string]interface{}, indent string) {
 	for _, k := range keys {
 		v := m[k]
 		if sub, ok := v.(map[string]interface{}); ok {
-			fmt.Fprintf(b, "%s%s:\n", indent, k)
+			fmt.Fprintf(b, "%s%s\n", keyStyle.Render(indent+k), dimStyle.Render(":"))
 			writeMap(b, sub, indent+"  ")
 			continue
 		}
-		fmt.Fprintf(b, "%s%s: %s\n", indent, k, formatValue(v))
+		fmt.Fprintf(b, "%s%s %s\n", keyStyle.Render(indent+k), dimStyle.Render(":"), styledValue(v))
 	}
 }
 
-func formatValue(v interface{}) string {
+// styledValue renders a decoded JSON value with type-based colors:
+// booleans green/red, numbers amber, strings bright, null dimmed.
+func styledValue(v interface{}) string {
 	switch tv := v.(type) {
 	case nil:
-		return "null"
+		return dimStyle.Render("null")
+	case bool:
+		if tv {
+			return boolTrueStyle.Render("true")
+		}
+		return boolFalseStyle.Render("false")
+	case float64:
+		return numStyle.Render(strconv.FormatFloat(tv, 'f', -1, 64))
 	case string:
-		return tv
+		return valStyle.Render(tv)
 	case []interface{}:
 		parts := make([]string, 0, len(tv))
 		for _, e := range tv {
-			parts = append(parts, formatValue(e))
+			parts = append(parts, styledValue(e))
 		}
 		return strings.Join(parts, ", ")
 	default:
-		return fmt.Sprint(v)
+		return valStyle.Render(fmt.Sprint(v))
 	}
 }
 
@@ -97,7 +107,7 @@ func secretDoc(data, meta map[string]interface{}) string {
 func formatPairs(pairs []vault.KV) string {
 	var b strings.Builder
 	for _, p := range pairs {
-		fmt.Fprintf(&b, "%s: %s\n", p.K, p.V)
+		fmt.Fprintf(&b, "%s%s %s\n", keyStyle.Render(p.K), dimStyle.Render(":"), valStyle.Render(p.V))
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

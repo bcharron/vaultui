@@ -17,6 +17,13 @@ var (
 	loadingStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	activeTabStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("213"))
 	titleStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("117"))
+
+	// Document (role config / secret / tune) colors.
+	keyStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("81"))  // keys
+	valStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("252")) // string values
+	numStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("214")) // numbers
+	boolTrueStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("114")) // true
+	boolFalseStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("203")) // false
 )
 
 func truncate(s string, max int) string {
