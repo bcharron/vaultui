@@ -195,9 +195,9 @@ func TestEndToEnd(t *testing.T) {
 	m = typeKeys(t, m, "enter") // jwt/ sorts before token/
 	wantView(t, m, "[Config]", "Roles")
 	m = typeKeys(t, m, "right")
-	wantView(t, m, "demo-service", "service-reader", "-> jwt-signer", "-> jwt-reader")
+	wantView(t, m, "demo-service", "service-reader", "-> jwt-signer, jwt-reader", "-> jwt-reader")
 	m = typeKeys(t, m, "enter") // read role demo-service
-	wantView(t, m, "linked policies: jwt-signer", "token_policies: jwt-signer", "bound_audiences: demo-services")
+	wantView(t, m, "linked policies: jwt-signer, jwt-reader", "token_policies: jwt-signer, jwt-reader", "bound_audiences: demo-services")
 	m = typeKeys(t, m, "esc", "esc", "esc", "esc")
 	wantView(t, m, "Secret Engines")
 }
