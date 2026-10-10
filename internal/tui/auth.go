@@ -146,6 +146,14 @@ type authDetailPage struct {
 	rolesErr     error
 	roles        []string
 	rcur, roff   int
+	rolePol      map[string][]string
+}
+
+type rolePoliciesMsg struct {
+	path     string
+	role     string
+	policies []string
+	err      error
 }
 
 type authTuneLoadedMsg struct {
@@ -160,6 +168,7 @@ func newAuthDetailPage(cl *vaultapi.Client, m vault.Mount) *authDetailPage {
 		m:            m,
 		cfgLoading:   true,
 		rolesLoading: true,
+		rolePol:      map[string][]string{},
 		vp:           viewport.New(0, 0),
 	}
 }
@@ -176,6 +185,29 @@ func (p *authDetailPage) Init() tea.Cmd {
 			return rolesLoadedMsg{path: m.Path, roles: roles, err: err}
 		},
 	)
+}
+
+// loadRolePolicies reads each listed role's config (capped) so the
+// Roles tab can show the policies each role links to.
+func (p *authDetailPage) loadRolePolicies() tea.Cmd {
+	cl, m := p.cl, p.m
+	endpoint := vault.AuthRoleListEndpoint(m.Type)
+	names := p.roles
+	if len(names) > 50 {
+		names = names[:50]
+	}
+	cmds := make([]tea.Cmd, 0, len(names))
+	for _, name := range names {
+		role := name
+		cmds = append(cmds, func() tea.Msg {
+			data, err := vault.ReadRole(cl, "auth/"+m.Path, endpoint, role)
+			if err != nil {
+				return rolePoliciesMsg{path: m.Path, role: role, err: err}
+			}
+			return rolePoliciesMsg{path: m.Path, role: role, policies: extractPolicies(data)}
+		})
+	}
+	return tea.Batch(cmds...)
 }
 
 func (p *authDetailPage) tabs() []string {
@@ -204,6 +236,16 @@ func (p *authDetailPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		p.rolesLoading = false
 		p.rolesErr = msg.err
 		p.roles = msg.roles
+		p.rcur, p.roff = 0, 0
+		return p, p.loadRolePolicies()
+	case rolePoliciesMsg:
+		if msg.path != p.m.Path {
+			return p, nil
+		}
+		if msg.err == nil && len(msg.policies) > 0 {
+			p.rolePol[msg.role] = msg.policies
+		}
+		return p, nil
 	case tea.KeyMsg:
 		return p.updateKeys(msg)
 	}
@@ -262,7 +304,7 @@ func (p *authDetailPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 					if err != nil {
 						return "", err
 					}
-					return formatMap(data), nil
+					return roleDoc(data), nil
 				},
 			))
 		}
@@ -330,12 +372,25 @@ func (p *authDetailPage) viewRoles() string {
 		rows = 1
 	}
 	p.rcur, p.roff = window(p.rcur, p.roff, len(p.roles), rows)
+	padW := 0
+	for _, r := range p.roles {
+		if len(r) > padW {
+			padW = len(r)
+		}
+	}
+	padW += 2
 	var b strings.Builder
 	for i := p.roff; i < min(p.roff+rows, len(p.roles)); i++ {
+		name := p.roles[i]
+		label := fmt.Sprintf("%-*s", padW, name)
+		pol := ""
+		if ps := p.rolePol[name]; len(ps) > 0 {
+			pol = dimStyle.Render("-> " + strings.Join(ps, ", "))
+		}
 		if i == p.rcur {
-			b.WriteString(selStyle.Render("> "+p.roles[i]) + "\n")
+			b.WriteString(selStyle.Render("> "+label) + pol + "\n")
 		} else {
-			b.WriteString(itemStyle.Render("  "+p.roles[i]) + "\n")
+			b.WriteString(itemStyle.Render("  "+label) + pol + "\n")
 		}
 	}
 	return strings.TrimRight(b.String(), "\n")

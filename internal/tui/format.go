@@ -50,6 +50,49 @@ func formatValue(v interface{}) string {
 	}
 }
 
+// extractPolicies pulls policy names out of a role's data, covering the
+// key variations used across Vault auth methods (token_policies,
+// policies).
+func extractPolicies(m map[string]interface{}) []string {
+	seen := make(map[string]bool)
+	var out []string
+	add := func(s string) {
+		s = strings.TrimSpace(s)
+		if s != "" && !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	for _, key := range []string{"token_policies", "policies"} {
+		switch v := m[key].(type) {
+		case []interface{}:
+			for _, e := range v {
+				if s, ok := e.(string); ok {
+					add(s)
+				}
+			}
+		case string:
+			for _, s := range strings.Split(v, ",") {
+				add(s)
+			}
+		}
+	}
+	return out
+}
+
+// roleDoc renders a role's config with its linked policies highlighted
+// up top, before the full field dump.
+func roleDoc(data map[string]interface{}) string {
+	var b strings.Builder
+	if pols := extractPolicies(data); len(pols) > 0 {
+		b.WriteString(dimStyle.Render("linked policies: "))
+		b.WriteString(selStyle.Render(strings.Join(pols, ", ")))
+		b.WriteString("\n\n")
+	}
+	b.WriteString(formatMap(data))
+	return b.String()
+}
+
 // secretDoc renders a KV secret's metadata (v2) and data sections.
 func secretDoc(data, meta map[string]interface{}) string {
 	var b strings.Builder
