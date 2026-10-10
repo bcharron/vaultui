@@ -200,12 +200,12 @@ func (p *engineDetailPage) enter() (Page, tea.Cmd) {
 		}
 		return p, Push(newDetailPage(
 			"secret: "+m.Path+e.Name,
-			func() (string, error) {
+			func() (string, []pageLink, error) {
 				data, meta, err := vault.ReadKV(cl, m, e.Name)
 				if err != nil {
-					return "", err
+					return "", nil, err
 				}
-				return secretDoc(data, meta), nil
+				return secretDoc(data, meta), nil, nil
 			},
 		))
 	}
@@ -214,16 +214,18 @@ func (p *engineDetailPage) enter() (Page, tea.Cmd) {
 		return p, nil
 	}
 	name := p.roles[p.rcur]
-	return p, Push(newDetailPage(
+	dp := newDetailPage(
 		fmt.Sprintf("%s: %s", p.tabs()[1], name),
-		func() (string, error) {
+		func() (string, []pageLink, error) {
 			data, err := vault.ReadRole(cl, m.Path, vault.RoleListEndpoint(m.Type), name)
 			if err != nil {
-				return "", err
+				return "", nil, err
 			}
-			return formatMap(data), nil
+			return formatMap(data), policyLinks(cl, extractPolicies(data)), nil
 		},
-	))
+	)
+	dp.linkTitle = "linked policies"
+	return p, Push(dp)
 }
 
 // layout recomputes viewport geometry and re-wraps its content.

@@ -36,6 +36,17 @@ func (p *policiesPage) Init() tea.Cmd {
 	}
 }
 
+// newPolicyDetailPage builds the viewer for one policy's rules.
+func newPolicyDetailPage(cl *vaultapi.Client, name string) Page {
+	return newDetailPage(
+		"policy: "+name,
+		func() (string, []pageLink, error) {
+			rules, err := vault.ReadPolicy(cl, name)
+			return rules, nil, err
+		},
+	)
+}
+
 func (p *policiesPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 	switch msg := msg.(type) {
 	case resizeMsg:
@@ -57,12 +68,7 @@ func (p *policiesPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			}
 		case "enter":
 			if p.cur < len(p.names) {
-				name := p.names[p.cur]
-				cl := p.cl
-				return p, Push(newDetailPage(
-					"policy: "+name,
-					func() (string, error) { return vault.ReadPolicy(cl, name) },
-				))
+				return p, Push(newPolicyDetailPage(p.cl, p.names[p.cur]))
 			}
 		case "r":
 			p.loading = true

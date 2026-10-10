@@ -80,19 +80,6 @@ func extractPolicies(m map[string]interface{}) []string {
 	return out
 }
 
-// roleDoc renders a role's config with its linked policies highlighted
-// up top, before the full field dump.
-func roleDoc(data map[string]interface{}) string {
-	var b strings.Builder
-	if pols := extractPolicies(data); len(pols) > 0 {
-		b.WriteString(dimStyle.Render("linked policies: "))
-		b.WriteString(selStyle.Render(strings.Join(pols, ", ")))
-		b.WriteString("\n\n")
-	}
-	b.WriteString(formatMap(data))
-	return b.String()
-}
-
 // secretDoc renders a KV secret's metadata (v2) and data sections.
 func secretDoc(data, meta map[string]interface{}) string {
 	var b strings.Builder

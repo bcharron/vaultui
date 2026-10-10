@@ -42,7 +42,9 @@ Home
     └── Auth detail
         ├── Config ........ sys/auth/{path}/tune
         └── Roles ......... roles/users/teams/groups per method type,
-                            with drill-in detail
+                            with inline "-> policies" column and drill-in
+                            detail; press the number next to a linked
+                            policy to jump straight to it
 ```
 
 ## Development

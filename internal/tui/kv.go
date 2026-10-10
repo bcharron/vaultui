@@ -87,12 +87,12 @@ func (p *kvPage) enter() (Page, tea.Cmd) {
 	cl, m, sub, name := p.cl, p.m, p.sub, e.Name
 	return p, Push(newDetailPage(
 		"secret: "+m.Path+sub+name,
-		func() (string, error) {
+		func() (string, []pageLink, error) {
 			data, meta, err := vault.ReadKV(cl, m, sub+name)
 			if err != nil {
-				return "", err
+				return "", nil, err
 			}
-			return secretDoc(data, meta), nil
+			return secretDoc(data, meta), nil, nil
 		},
 	))
 }

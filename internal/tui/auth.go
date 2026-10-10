@@ -297,16 +297,18 @@ func (p *authDetailPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 		if p.tab == 1 && p.rcur < len(p.roles) {
 			name := p.roles[p.rcur]
 			cl, m := p.cl, p.m
-			return p, Push(newDetailPage(
+			dp := newDetailPage(
 				fmt.Sprintf("%s: %s", p.tabs()[1], name),
-				func() (string, error) {
+				func() (string, []pageLink, error) {
 					data, err := vault.ReadRole(cl, "auth/"+m.Path, vault.AuthRoleListEndpoint(m.Type), name)
 					if err != nil {
-						return "", err
+						return "", nil, err
 					}
-					return roleDoc(data), nil
+					return formatMap(data), policyLinks(cl, extractPolicies(data)), nil
 				},
-			))
+			)
+			dp.linkTitle = "linked policies"
+			return p, Push(dp)
 		}
 		return p, nil
 	}
