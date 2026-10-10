@@ -112,6 +112,8 @@ func (p *enginesPage) View() string {
 
 func (p *enginesPage) Header() string { return "engines" }
 
+func (p *enginesPage) Typing() bool { return false }
+
 func (p *enginesPage) Hints() string {
 	return "up/down select  enter open engine  r refresh  esc back  q quit"
 }

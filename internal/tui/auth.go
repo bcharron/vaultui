@@ -111,6 +111,8 @@ func (p *authPage) View() string {
 
 func (p *authPage) Header() string { return "auth methods" }
 
+func (p *authPage) Typing() bool { return false }
+
 func (p *authPage) Hints() string {
 	return "up/down select  enter open auth method  r refresh  esc back  q quit"
 }
@@ -401,6 +403,8 @@ func (p *authDetailPage) viewRoles() string {
 func (p *authDetailPage) Header() string {
 	return fmt.Sprintf("auth / %s", strings.TrimSuffix(p.m.Path, "/"))
 }
+
+func (p *authDetailPage) Typing() bool { return false }
 
 func (p *authDetailPage) Hints() string {
 	return "left/right tabs  up/down select  enter open  r refresh  esc back  q quit"

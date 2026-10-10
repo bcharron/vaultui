@@ -148,6 +148,8 @@ func (p *detailPage) View() string {
 
 func (p *detailPage) Header() string { return p.title }
 
+func (p *detailPage) Typing() bool { return false }
+
 func (p *detailPage) Hints() string {
 	if len(p.links) > 0 {
 		return "1-9 open link  up/down scroll  esc back  q quit"

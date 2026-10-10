@@ -189,7 +189,8 @@ func TestEndToEnd(t *testing.T) {
 	m = typeKeys(t, m, "esc", "esc")
 	wantView(t, m, "Secret Engines")
 
-	// Auth methods: jwt roles bound to policies
+	// Reset the persistent home cursor, then auth methods: jwt roles
+	m = typeKeys(t, m, "up", "up", "up", "up", "up")
 	m = typeKeys(t, m, "down", "down", "enter")
 	wantView(t, m, "jwt/", "token/")
 	m = typeKeys(t, m, "enter") // jwt/ sorts before token/
@@ -202,4 +203,30 @@ func TestEndToEnd(t *testing.T) {
 	wantView(t, m, "policy: jwt-signer", "transit/sign/jwt-signer", "capabilities")
 	m = typeKeys(t, m, "esc", "esc", "esc", "esc", "esc") // policy -> role -> auth detail -> auth list -> home
 	wantView(t, m, "Secret Engines")
+
+	// Token info + capabilities check
+	m = typeKeys(t, m, "up", "up", "up", "up", "up")
+	m = typeKeys(t, m, "down", "down", "down", "enter")
+	wantView(t, m, "display_name: token", "policies: root", "orphan: true")
+	m = typeKeys(t, m, "secret/data/jwt/service-a")
+	m = typeKeys(t, m, "enter")
+	wantView(t, m, "capabilities: root", "path: secret/data/jwt/service-a")
+	m = typeKeys(t, m, "esc") // clear input
+	m = typeKeys(t, m, "esc") // back to home
+
+	// Server status
+	m = typeKeys(t, m, "up", "up", "up", "up", "up")
+	m = typeKeys(t, m, "down", "down", "down", "down", "enter")
+	wantView(t, m, "sealed: false", "storage_type: inmem", "standby: false")
+	m = typeKeys(t, m, "esc")
+
+	// KV v2 version history: apps/api has two versions
+	m = typeKeys(t, m, "up", "up", "up", "up", "up")
+	m = typeKeys(t, m, "enter", "down", "down", "down", "down", "enter") // secret/ engine detail
+	m = typeKeys(t, m, "right") // browse tab
+	m = typeKeys(t, m, "enter") // into apps/
+	m = typeKeys(t, m, "v")    // versions of api (cursor on api)
+	wantView(t, m, "v2", "v1", "current")
+	m = typeKeys(t, m, "down", "enter") // view version 1
+	wantView(t, m, "version: 1", "db_host: db01.internal")
 }

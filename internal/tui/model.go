@@ -21,13 +21,16 @@ func Push(p Page) tea.Cmd { return func() tea.Msg { return pushMsg{p} } }
 func Pop() tea.Cmd { return func() tea.Msg { return popMsg{} } }
 
 // Page is one screen of the TUI. Update returns the (possibly replaced)
-// page, mirroring tea.Model semantics.
+// page, mirroring tea.Model semantics. Typing reports whether the page
+// currently captures arbitrary key input (a text field); while true the
+// app does not intercept q/esc.
 type Page interface {
 	Init() tea.Cmd
 	Update(tea.Msg) (Page, tea.Cmd)
 	View() string
 	Header() string
 	Hints() string
+	Typing() bool
 }
 
 // App is the root model: it owns the page stack and the global chrome
@@ -64,14 +67,20 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "ctrl+c", "q":
+		case "ctrl+c":
 			return a, tea.Quit
-		case "esc":
-			if len(a.stack) > 1 {
-				a.stack = a.stack[:len(a.stack)-1]
-				return a, nil
+		case "q":
+			if !a.top().Typing() {
+				return a, tea.Quit
 			}
-			return a, tea.Quit
+		case "esc":
+			if !a.top().Typing() {
+				if len(a.stack) > 1 {
+					a.stack = a.stack[:len(a.stack)-1]
+					return a, nil
+				}
+				return a, tea.Quit
+			}
 		}
 		var cmd tea.Cmd
 		a.stack[len(a.stack)-1], cmd = a.stack[len(a.stack)-1].Update(msg)

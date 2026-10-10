@@ -177,6 +177,11 @@ func (p *engineDetailPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 			p.vp, _ = p.vp.Update(msg)
 		}
 		return p, nil
+	case "v":
+		if p.isKV() && p.tab == 1 && p.ecur < len(p.entries) && !p.entries[p.ecur].IsDir {
+			return p, Push(newKVVersionsPage(p.cl, p.m, p.entries[p.ecur].Name))
+		}
+		return p, nil
 	case "enter":
 		return p.enter()
 	}
@@ -201,7 +206,7 @@ func (p *engineDetailPage) enter() (Page, tea.Cmd) {
 		return p, Push(newDetailPage(
 			"secret: "+m.Path+e.Name,
 			func() (string, []pageLink, error) {
-				data, meta, err := vault.ReadKV(cl, m, e.Name)
+				data, meta, err := vault.ReadKV(cl, m, e.Name, 0)
 				if err != nil {
 					return "", nil, err
 				}
@@ -338,6 +343,8 @@ func (p *engineDetailPage) Header() string {
 	return fmt.Sprintf("engines / %s", strings.TrimSuffix(p.m.Path, "/"))
 }
 
+func (p *engineDetailPage) Typing() bool { return false }
+
 func (p *engineDetailPage) Hints() string {
-	return "left/right tabs  up/down select  enter open  r refresh  esc back  q quit"
+	return "left/right tabs  up/down select  enter open  v versions  r refresh  esc back  q quit"
 }

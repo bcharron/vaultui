@@ -1,6 +1,8 @@
 package vault
 
 import (
+	"errors"
+	"strconv"
 	"strings"
 
 	"github.com/hashicorp/vault/api"
@@ -32,15 +34,20 @@ func ListKV(c *api.Client, m Mount, sub string) ([]KVEntry, error) {
 }
 
 // ReadKV reads a secret and returns its data along with engine-internal
-// metadata (nil for KV v1).
-func ReadKV(c *api.Client, m Mount, sub string) (data, meta map[string]interface{}, err error) {
+// metadata (nil for KV v1). For KV v2, version > 0 reads that specific
+// version; version 0 reads the current one.
+func ReadKV(c *api.Client, m Mount, sub string, version int) (data, meta map[string]interface{}, err error) {
 	cc, cancel := ctx()
 	defer cancel()
 	path := m.Path + sub
 	if m.KVVersion == 2 {
 		path = m.Path + "data/" + sub
 	}
-	s, rerr := c.Logical().ReadWithContext(cc, path)
+	var query map[string][]string
+	if m.KVVersion == 2 && version > 0 {
+		query = map[string][]string{"version": {strconv.Itoa(version)}}
+	}
+	s, rerr := c.Logical().ReadWithDataWithContext(cc, path, query)
 	if rerr != nil {
 		return nil, nil, rerr
 	}
@@ -65,6 +72,24 @@ func ReadKV(c *api.Client, m Mount, sub string) (data, meta map[string]interface
 		return nil, nil, err
 	}
 	return data, nil, nil
+}
+
+// KVMetadata reads a KV v2 secret's metadata document, which contains
+// the full version history.
+func KVMetadata(c *api.Client, m Mount, sub string) (map[string]interface{}, error) {
+	if m.KVVersion != 2 {
+		return nil, errors.New("version history requires a KV v2 engine")
+	}
+	cc, cancel := ctx()
+	defer cancel()
+	s, err := c.Logical().ReadWithContext(cc, m.Path+"metadata/"+sub)
+	if err != nil {
+		return nil, err
+	}
+	if s == nil || s.Data == nil {
+		return nil, errEmpty(strings.TrimSuffix(m.Path+"metadata/"+sub, "/"))
+	}
+	return normalize(s.Data)
 }
 
 type errEmpty string

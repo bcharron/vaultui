@@ -67,6 +67,10 @@ func (p *kvPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			}
 		case "enter":
 			return p.enter()
+		case "v":
+			if p.cur < len(p.entries) && !p.entries[p.cur].IsDir {
+				return p, Push(newKVVersionsPage(p.cl, p.m, p.sub+p.entries[p.cur].Name))
+			}
 		case "r":
 			p.loading = true
 			p.err = nil
@@ -88,7 +92,7 @@ func (p *kvPage) enter() (Page, tea.Cmd) {
 	return p, Push(newDetailPage(
 		"secret: "+m.Path+sub+name,
 		func() (string, []pageLink, error) {
-			data, meta, err := vault.ReadKV(cl, m, sub+name)
+			data, meta, err := vault.ReadKV(cl, m, sub+name, 0)
 			if err != nil {
 				return "", nil, err
 			}
@@ -141,6 +145,8 @@ func (p *kvPage) Header() string {
 	return fmt.Sprintf("kv %s%s", p.m.Path, p.sub)
 }
 
+func (p *kvPage) Typing() bool { return false }
+
 func (p *kvPage) Hints() string {
-	return "up/down select  enter open  r refresh  esc back  q quit"
+	return "up/down select  enter open  v versions  r refresh  esc back  q quit"
 }

@@ -38,14 +38,23 @@ Home
 │           └── KV browser  directory tree navigation
 │               └── Secret  key/value data plus v2 metadata
 ├── ACL Policies ......... list + policy document viewer
-└── Auth Methods ......... enabled auth mounts (jwt, oidc, approle, ...)
-    └── Auth detail
-        ├── Config ........ sys/auth/{path}/tune
-        └── Roles ......... roles/users/teams/groups per method type,
-                            with inline "-> policies" column and drill-in
-                            detail; press the number next to a linked
-                            policy to jump straight to it
+├── Auth Methods ......... enabled auth mounts (jwt, oidc, approle, ...)
+│   └── Auth detail
+│       ├── Config ........ sys/auth/{path}/tune
+│       └── Roles ......... roles/users/teams/groups per method type,
+│                           with inline "-> policies" column and drill-in
+│                           detail; press the number next to a linked
+│                           policy to jump straight to it
+├── Token Info ........... lookup-self (policies, TTLs, ...) plus a
+│                          capabilities check: type a path, see what
+│                          your token can do on it
+└── Server Status ........ sys/seal-status + sys/health (seal state,
+                           version, cluster identity, HA)
 ```
+
+On a KV secret in the browser, `v` opens its version history (KV v2):
+each version's creation time and state, with drill-in to that version's
+data. vaultui is read-only: no page issues writes to Vault.
 
 ## Development
 

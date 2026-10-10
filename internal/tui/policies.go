@@ -108,6 +108,8 @@ func (p *policiesPage) View() string {
 
 func (p *policiesPage) Header() string { return "policies" }
 
+func (p *policiesPage) Typing() bool { return false }
+
 func (p *policiesPage) Hints() string {
 	return "up/down select  enter view policy  r refresh  esc back  q quit"
 }
