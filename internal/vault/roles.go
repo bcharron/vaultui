@@ -34,8 +34,34 @@ var roleEndpoints = map[string]string{
 	"transit":       "keys",
 }
 
+// authRoleEndpoints maps an auth method type to the path segment under
+// the mount where its roles/users/groups live. Unknown types fall back
+// to "role".
+var authRoleEndpoints = map[string]string{
+	"jwt":        "role",
+	"oidc":       "role",
+	"approle":    "role",
+	"kubernetes": "role",
+	"saml":       "role",
+	"azuread":    "role",
+	"gcp":        "role",
+	"userpass":   "users",
+	"okta":       "users",
+	"github":     "teams",
+	"ldap":       "groups",
+}
+
+// AuthRoleListEndpoint returns the sub-path where roles/users/groups are
+// listed for the given auth method type.
+func AuthRoleListEndpoint(authType string) string {
+	if ep, ok := authRoleEndpoints[authType]; ok {
+		return ep
+	}
+	return "role"
+}
+
 // RoleListEndpoint returns the sub-path where roles/keys are listed for
-// the given engine type.
+// the given secret engine type.
 func RoleListEndpoint(engineType string) string {
 	if ep, ok := roleEndpoints[engineType]; ok {
 		return ep
@@ -43,21 +69,22 @@ func RoleListEndpoint(engineType string) string {
 	return "roles"
 }
 
-// ListRoles lists role (or key) names for a mounted engine. It returns an
-// error if the engine type has no listable roles or access is denied.
-func ListRoles(c *api.Client, mountPath, engineType string) ([]string, error) {
+// ListRoles lists role (or key, or user) names under a mount at the given
+// endpoint. It returns an error if the endpoint has no listable entries
+// or access is denied.
+func ListRoles(c *api.Client, mountPath, endpoint string) ([]string, error) {
 	if mountPath == "" {
 		return nil, errors.New("no mount")
 	}
-	return listKeys(c, mountPath+RoleListEndpoint(engineType))
+	return listKeys(c, mountPath+endpoint)
 }
 
 // ReadRole reads a single role's (or key's) configuration and returns it
 // as a normalized, display-ready map.
-func ReadRole(c *api.Client, mountPath, engineType, name string) (map[string]interface{}, error) {
+func ReadRole(c *api.Client, mountPath, endpoint, name string) (map[string]interface{}, error) {
 	cc, cancel := ctx()
 	defer cancel()
-	path := mountPath + RoleListEndpoint(engineType) + "/" + name
+	path := mountPath + endpoint + "/" + name
 	s, err := c.Logical().ReadWithContext(cc, path)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)

@@ -17,7 +17,7 @@ type homePage struct {
 func newHomePage(cl *vaultapi.Client) *homePage {
 	return &homePage{
 		cl:    cl,
-		items: []string{"Secret Engines", "ACL Policies"},
+		items: []string{"Secret Engines", "ACL Policies", "Auth Methods"},
 	}
 }
 
@@ -43,6 +43,8 @@ func (p *homePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 				return p, Push(newEnginesPage(p.cl))
 			case 1:
 				return p, Push(newPoliciesPage(p.cl))
+			case 2:
+				return p, Push(newAuthPage(p.cl))
 			}
 		}
 	}

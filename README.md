@@ -37,7 +37,12 @@ Home
 │       └── Browse ........ KV v1/v2 key listing (KV engines)
 │           └── KV browser  directory tree navigation
 │               └── Secret  key/value data plus v2 metadata
-└── ACL Policies ......... list + policy document viewer
+├── ACL Policies ......... list + policy document viewer
+└── Auth Methods ......... enabled auth mounts (jwt, oidc, approle, ...)
+    └── Auth detail
+        ├── Config ........ sys/auth/{path}/tune
+        └── Roles ......... roles/users/teams/groups per method type,
+                            with drill-in detail
 ```
 
 ## Development
@@ -53,8 +58,8 @@ The test only runs against loopback addresses and skips otherwise, so
 
 ## Layout
 
-- `internal/vault/` — thin wrappers over the Vault API: mounts, tune
-  configs, roles, policies, KV v1/v2 listing and reads.
+- `internal/vault/` — thin wrappers over the Vault API: mounts, auth
+  methods, tune configs, roles, policies, KV v1/v2 listing and reads.
 - `internal/tui/` — Bubble Tea pages over a navigation stack: home,
-  engines, engine detail (tabbed), KV browser, generic detail viewer,
-  policies.
+  engines, engine detail (tabbed), auth methods, auth detail (tabbed),
+  KV browser, generic detail viewer, policies.

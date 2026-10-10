@@ -80,6 +80,11 @@ func Tune(c *api.Client, mountPath string) ([]KV, error) {
 	if err != nil {
 		return nil, err
 	}
+	return tunePairs(data), nil
+}
+
+// tunePairs flattens a tune response into sorted display pairs.
+func tunePairs(data map[string]interface{}) []KV {
 	keys := make([]string, 0, len(data))
 	for k := range data {
 		keys = append(keys, k)
@@ -89,7 +94,7 @@ func Tune(c *api.Client, mountPath string) ([]KV, error) {
 	for _, k := range keys {
 		pairs = append(pairs, KV{K: k, V: formatTuneValue(k, data[k])})
 	}
-	return pairs, nil
+	return pairs
 }
 
 func formatTuneValue(key string, v interface{}) string {

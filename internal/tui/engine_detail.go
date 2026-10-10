@@ -69,7 +69,7 @@ func (p *engineDetailPage) Init() tea.Cmd {
 	}
 	if m.Type != "kv" {
 		cmds = append(cmds, func() tea.Msg {
-			roles, err := vault.ListRoles(cl, m.Path, m.Type)
+			roles, err := vault.ListRoles(cl, m.Path, vault.RoleListEndpoint(m.Type))
 			return rolesLoadedMsg{path: m.Path, roles: roles, err: err}
 		})
 	}
@@ -217,7 +217,7 @@ func (p *engineDetailPage) enter() (Page, tea.Cmd) {
 	return p, Push(newDetailPage(
 		fmt.Sprintf("%s: %s", p.tabs()[1], name),
 		func() (string, error) {
-			data, err := vault.ReadRole(cl, m.Path, m.Type, name)
+			data, err := vault.ReadRole(cl, m.Path, vault.RoleListEndpoint(m.Type), name)
 			if err != nil {
 				return "", err
 			}

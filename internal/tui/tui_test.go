@@ -183,9 +183,21 @@ func TestEndToEnd(t *testing.T) {
 
 	// Policies
 	m = typeKeys(t, m, "down", "enter")
-	wantView(t, m, "default", "root", "team-apps")
-	m = typeKeys(t, m, "down", "down", "enter") // team-apps
+	wantView(t, m, "default", "root", "team-apps", "jwt-signer", "jwt-reader")
+	m = typeKeys(t, m, "down", "down", "down", "down", "enter") // team-apps
 	wantView(t, m, "capabilities", "secret/data/apps/*")
 	m = typeKeys(t, m, "esc", "esc")
+	wantView(t, m, "Secret Engines")
+
+	// Auth methods: jwt roles bound to policies
+	m = typeKeys(t, m, "down", "down", "enter")
+	wantView(t, m, "jwt/", "token/")
+	m = typeKeys(t, m, "enter") // jwt/ sorts before token/
+	wantView(t, m, "[Config]", "Roles")
+	m = typeKeys(t, m, "right")
+	wantView(t, m, "demo-service", "service-reader")
+	m = typeKeys(t, m, "enter") // read role demo-service
+	wantView(t, m, "token_policies: jwt-signer", "bound_audiences: demo-services")
+	m = typeKeys(t, m, "esc", "esc", "esc", "esc")
 	wantView(t, m, "Secret Engines")
 }
