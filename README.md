@@ -48,8 +48,13 @@ Home
 ├── Token Info ........... lookup-self (policies, TTLs, ...) plus a
 │                          capabilities check: type a path, see what
 │                          your token can do on it
-└── Server Status ........ sys/seal-status + sys/health (seal state,
-                           version, cluster identity, HA)
+├── Server Status ........ sys/seal-status + sys/health (seal state,
+│                          version, cluster identity, HA)
+├── Leases ............... tree browser over sys/leases/lookup with
+│                          drill-in to each lease's times, TTL, and
+│                          renewable flag
+└── Identity ............. entities and groups (two tabs), each with
+                           drill-in detail and linked-policy jumps
 ```
 
 On a KV secret in the browser, `v` opens its version history (KV v2):

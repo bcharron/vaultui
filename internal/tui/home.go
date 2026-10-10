@@ -23,6 +23,8 @@ func newHomePage(cl *vaultapi.Client) *homePage {
 			"Auth Methods",
 			"Token Info",
 			"Server Status",
+			"Leases",
+			"Identity",
 		},
 	}
 }
@@ -55,6 +57,10 @@ func (p *homePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 				return p, Push(newTokenPage(p.cl))
 			case 4:
 				return p, Push(newServerStatusPage(p.cl))
+			case 5:
+				return p, Push(newLeasesPage(p.cl, ""))
+			case 6:
+				return p, Push(newIdentityPage(p.cl))
 			}
 		}
 	}

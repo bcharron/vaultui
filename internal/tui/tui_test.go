@@ -121,6 +121,13 @@ func typeKeys(t *testing.T, m tea.Model, keys ...string) tea.Model {
 	return m
 }
 
+// homeReset returns the model to the home page with the cursor at the
+// top item, regardless of where it was left.
+func homeReset(t *testing.T, m tea.Model) tea.Model {
+	t.Helper()
+	return typeKeys(t, m, "up", "up", "up", "up", "up", "up", "up")
+}
+
 func wantView(t *testing.T, m tea.Model, wants ...string) {
 	t.Helper()
 	view := m.View()
@@ -190,7 +197,7 @@ func TestEndToEnd(t *testing.T) {
 	wantView(t, m, "Secret Engines")
 
 	// Reset the persistent home cursor, then auth methods: jwt roles
-	m = typeKeys(t, m, "up", "up", "up", "up", "up")
+	m = homeReset(t, m)
 	m = typeKeys(t, m, "down", "down", "enter")
 	wantView(t, m, "jwt/", "token/")
 	m = typeKeys(t, m, "enter") // jwt/ sorts before token/
@@ -205,7 +212,7 @@ func TestEndToEnd(t *testing.T) {
 	wantView(t, m, "Secret Engines")
 
 	// Token info + capabilities check
-	m = typeKeys(t, m, "up", "up", "up", "up", "up")
+	m = homeReset(t, m)
 	m = typeKeys(t, m, "down", "down", "down", "enter")
 	wantView(t, m, "display_name: token", "policies: root", "orphan: true")
 	m = typeKeys(t, m, "secret/data/jwt/service-a")
@@ -215,18 +222,43 @@ func TestEndToEnd(t *testing.T) {
 	m = typeKeys(t, m, "esc") // back to home
 
 	// Server status
-	m = typeKeys(t, m, "up", "up", "up", "up", "up")
+	m = homeReset(t, m)
 	m = typeKeys(t, m, "down", "down", "down", "down", "enter")
 	wantView(t, m, "sealed: false", "storage_type: inmem", "standby: false")
 	m = typeKeys(t, m, "esc")
 
 	// KV v2 version history: apps/api has two versions
-	m = typeKeys(t, m, "up", "up", "up", "up", "up")
+	m = homeReset(t, m)
 	m = typeKeys(t, m, "enter", "down", "down", "down", "down", "enter") // secret/ engine detail
-	m = typeKeys(t, m, "right") // browse tab
-	m = typeKeys(t, m, "enter") // into apps/
-	m = typeKeys(t, m, "v")    // versions of api (cursor on api)
+	m = typeKeys(t, m, "right")                                          // browse tab
+	m = typeKeys(t, m, "enter")                                          // into apps/
+	m = typeKeys(t, m, "v")                                              // versions of api (cursor on api)
 	wantView(t, m, "v2", "v1", "current")
 	m = typeKeys(t, m, "down", "enter") // view version 1
 	wantView(t, m, "version: 1", "db_host: db01.internal")
+	m = typeKeys(t, m, "esc", "esc", "esc", "esc", "esc") // back to home
+
+	// Leases: drill to the non-expiring root token lease
+	m = homeReset(t, m)
+	m = typeKeys(t, m, "down", "down", "down", "down", "down", "enter")
+	wantView(t, m, "auth/")
+	m = typeKeys(t, m, "enter") // into auth/
+	wantView(t, m, "jwt/", "token/")
+	m = typeKeys(t, m, "down", "enter") // into token/
+	m = typeKeys(t, m, "enter")         // into create/
+	m = typeKeys(t, m, "enter")         // open the leaf lease
+	wantView(t, m, "renewable: false", "ttl: 0", "auth/token/create/")
+	m = typeKeys(t, m, "esc", "esc", "esc", "esc", "esc", "esc")
+
+	// Identity: entities and groups with policy links
+	m = homeReset(t, m)
+	m = typeKeys(t, m, "down", "down", "down", "down", "down", "down", "enter")
+	wantView(t, m, "[Entities]", "bob", "service-a")
+	m = typeKeys(t, m, "enter") // bob
+	wantView(t, m, "linked policies:", "[1] jwt-reader", "[2] jwt-signer", "email: bob@example.com")
+	m = typeKeys(t, m, "esc")
+	m = typeKeys(t, m, "right")
+	wantView(t, m, "[Groups]", "apps-team")
+	m = typeKeys(t, m, "enter")
+	wantView(t, m, "linked policies:", "[1] jwt-signer", "member_entity_ids:")
 }
