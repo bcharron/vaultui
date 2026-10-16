@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"vaultui/internal/vault"
+	"github.com/bcharron/vaultui/internal/vault"
 )
 
 // formatMap renders a normalized map as aligned, sorted, indented

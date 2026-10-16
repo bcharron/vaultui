@@ -7,7 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	vaultapi "github.com/hashicorp/vault/api"
 
-	"vaultui/internal/vault"
+	"github.com/bcharron/vaultui/internal/vault"
 )
 
 // tokenPage shows the authenticated token's own properties and lets the

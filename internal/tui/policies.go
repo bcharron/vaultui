@@ -6,7 +6,7 @@ import (
 	"github.com/charmbracelet/bubbletea"
 	vaultapi "github.com/hashicorp/vault/api"
 
-	"vaultui/internal/vault"
+	"github.com/bcharron/vaultui/internal/vault"
 )
 
 type policiesPage struct {

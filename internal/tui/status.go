@@ -5,7 +5,7 @@ import (
 
 	vaultapi "github.com/hashicorp/vault/api"
 
-	"vaultui/internal/vault"
+	"github.com/bcharron/vaultui/internal/vault"
 )
 
 // newServerStatusPage builds a read-only server status document from

@@ -8,7 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	vaultapi "github.com/hashicorp/vault/api"
 
-	"vaultui/internal/vault"
+	"github.com/bcharron/vaultui/internal/vault"
 )
 
 // kvVersion is one entry of a KV v2 secret's version history.

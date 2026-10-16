@@ -1,4 +1,4 @@
-module vaultui
+module github.com/bcharron/vaultui
 
 go 1.25.4
 

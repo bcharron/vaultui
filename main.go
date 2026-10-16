@@ -6,8 +6,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"vaultui/internal/tui"
-	"vaultui/internal/vault"
+	"github.com/bcharron/vaultui/internal/tui"
+	"github.com/bcharron/vaultui/internal/vault"
 )
 
 func main() {
