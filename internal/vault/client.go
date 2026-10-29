@@ -6,16 +6,18 @@ package vault
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/hashicorp/vault/api"
+	"github.com/hashicorp/vault/api/cliconfig"
 )
 
 // NewClient builds a Vault client configured from the environment
 // (VAULT_ADDR, VAULT_NAMESPACE, VAULT_CACERT, ... as handled by
-// api.DefaultConfig) with the token taken from VAULT_TOKEN or, failing
-// that, from ~/.vault-token as written by `vault login`.
+// api.DefaultConfig). The token is resolved the same way the vault CLI
+// does: VAULT_TOKEN first, then the configured token helper
+// (token_helper in ~/.vault, or $VAULT_CONFIG_PATH), whose default
+// reads ~/.vault-token as written by `vault login`.
 func NewClient() (*api.Client, error) {
 	cfg := api.DefaultConfig()
 	if cfg.Address == "" || cfg.Address == "https://127.0.0.1:8200" {
@@ -30,26 +32,19 @@ func NewClient() (*api.Client, error) {
 
 	token := os.Getenv("VAULT_TOKEN")
 	if token == "" {
-		token, err = readTokenFile()
+		helper, err := cliconfig.DefaultTokenHelper()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("resolving token helper: %w", err)
 		}
+		token, err = helper.Get()
+		if err != nil {
+			return nil, fmt.Errorf("getting token from token helper %s: %w", helper.Path(), err)
+		}
+		token = strings.TrimSpace(token)
 	}
 	if token == "" {
 		return nil, fmt.Errorf("no Vault token found; set VAULT_TOKEN or run `vault login`")
 	}
 	c.SetToken(token)
 	return c, nil
-}
-
-func readTokenFile() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", nil //nolint:nilerr // fall through, caller reports "no token"
-	}
-	b, err := os.ReadFile(filepath.Join(home, ".vault-token"))
-	if err != nil {
-		return "", nil //nolint:nilerr // fall through, caller reports "no token"
-	}
-	return strings.TrimSpace(string(b)), nil
 }

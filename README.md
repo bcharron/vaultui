@@ -17,8 +17,10 @@ export VAULT_TOKEN=...
 ./vaultui
 ```
 
-The token is resolved from `VAULT_TOKEN`, falling back to `~/.vault-token`
-(as written by `vault login`). All other `VAULT_*` environment variables
+The token is resolved the same way the vault CLI does: `VAULT_TOKEN` first,
+then the configured token helper (`token_helper` in `~/.vault`, or
+`$VAULT_CONFIG_PATH`), whose default reads `~/.vault-token` (as written by
+`vault login`). All other `VAULT_*` environment variables
 (`VAULT_NAMESPACE`, `VAULT_CACERT`, ...) are honored via the official
 `hashicorp/vault/api` client.
 
