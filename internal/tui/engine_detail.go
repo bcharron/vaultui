@@ -27,8 +27,10 @@ type engineDetailPage struct {
 	// ecfgEndpoints are the engine's own config endpoints (aws
 	// config/root+lease, gcp config); non-empty only for engine types
 	// that have them, and shown as a second synthetic row whose
-	// expansion shows the rendered document.
+	// expansion shows the rendered document, fetched lazily when the
+	// row is first selected.
 	ecfgEndpoints []string
+	ecfgFetched   bool
 	ecfgLoading   bool
 	ecfgText      string
 
@@ -87,7 +89,6 @@ func newEngineDetailPage(cl *vaultapi.Client, m vault.Mount) *engineDetailPage {
 		cfgLoading:    true,
 		ecfgEndpoints: vault.EngineConfigEndpoints(m.Type),
 	}
-	p.ecfgLoading = p.hasEngineConfig()
 	for _, g := range vault.RoleGroups(m.Type) {
 		p.groups = append(p.groups, groupState{
 			label:    g.Label,
@@ -111,12 +112,6 @@ func (p *engineDetailPage) Init() tea.Cmd {
 		cmds = append(cmds, func() tea.Msg {
 			roles, err := vault.ListRoles(cl, m.Path, g.endpoint)
 			return rolesLoadedMsg{path: m.Path, endpoint: g.endpoint, roles: roles, err: err}
-		})
-	}
-	if p.hasEngineConfig() {
-		eps := p.ecfgEndpoints
-		cmds = append(cmds, func() tea.Msg {
-			return engineCfgLoadedMsg{path: m.Path, text: engineConfigDoc(cl, m.Path, eps)}
 		})
 	}
 	return tea.Batch(cmds...)
@@ -199,11 +194,27 @@ func (p *engineDetailPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 	case "enter":
 		if p.cur < len(vis) {
 			if cmd := p.enter(vis[p.cur]); cmd != nil {
-				return p, cmd
+				return p, tea.Batch(cmd, p.ensureEcfg())
 			}
 		}
 	}
-	return p, nil
+	return p, p.ensureEcfg()
+}
+
+// ensureEcfg fetches the engine config once, when its row is first
+// selected: the expansion pane's preview costs one request per
+// engine, only if it is ever inspected.
+func (p *engineDetailPage) ensureEcfg() tea.Cmd {
+	vis := p.visible()
+	if p.cur >= len(vis) || vis[p.cur].kind != rowEngineCfg || p.ecfgFetched {
+		return nil
+	}
+	p.ecfgFetched = true
+	p.ecfgLoading = true
+	cl, m, eps := p.cl, p.m, p.ecfgEndpoints
+	return func() tea.Msg {
+		return engineCfgLoadedMsg{path: m.Path, text: engineConfigDoc(cl, m.Path, eps)}
+	}
 }
 
 // enter opens the selected row: both config rows push their document;
@@ -312,11 +323,21 @@ func (p *engineDetailPage) View() string {
 }
 
 func (p *engineDetailPage) row(r engineRow, sel bool) string {
-	text := "  " + p.rowText(r)
+	// The selected row renders plain so the highlight bar paints the
+	// whole line: embedded per-segment colors would break the bar's
+	// background at their ANSI resets.
 	if sel {
-		return selBar(p.w, text)
+		return selBar(p.w, "  "+p.rowPlain(r))
 	}
-	return text
+	return "  " + p.rowText(r)
+}
+
+// rowPlain is the row's text without styling, for the selection bar.
+func (p *engineDetailPage) rowPlain(r engineRow) string {
+	if r.kind == rowGroup {
+		return r.label + p.groupNote(r.ep)
+	}
+	return r.label
 }
 
 func (p *engineDetailPage) rowText(r engineRow) string {
@@ -364,7 +385,7 @@ func (p *engineDetailPage) expansion(vis []engineRow) []string {
 		return truncateLines(lines, area)
 	case rowEngineCfg:
 		lines := []string{titleStyle.Render(engineCfgRowLabel)}
-		if p.ecfgLoading {
+		if p.ecfgLoading || !p.ecfgFetched {
 			lines = append(lines, dimStyle.Render("loading ..."))
 		} else {
 			lines = append(lines, strings.Split(p.ecfgText, "\n")...)
