@@ -57,6 +57,47 @@ func TestTokenRefreshDue(t *testing.T) {
 	}
 }
 
+// TestHeaderOmitsUnknownToken pins the reported bug: before the first
+// successful lookup-self (e.g. the token is already expired), the
+// header must not claim the token has no expiry.
+func TestHeaderOmitsUnknownToken(t *testing.T) {
+	a := App{
+		addr:     "http://127.0.0.1:8200",
+		tokenTTL: 0, // zero value: never anchored
+		w:        120,
+		stack:    []Page{newHomePage(nil)},
+	}
+	if h := a.header(); strings.Contains(h, "token:") {
+		t.Errorf("header shows a token segment with no successful lookup\n%q", h)
+	}
+}
+
+// TestHeaderExpiredToken pins the expired chip: a TTL in the past
+// renders "token expiration: expired" as bold light text on a bright
+// red background, breaking the bar's palette so it stands out.
+func TestHeaderExpiredToken(t *testing.T) {
+	r := lipgloss.DefaultRenderer()
+	old := r.ColorProfile()
+	r.SetColorProfile(termenv.TrueColor)
+	defer r.SetColorProfile(old)
+
+	a := App{
+		addr:     "http://127.0.0.1:8200",
+		tokenTTL: 60,
+		tokenAt:  time.Now().Add(-61 * time.Second),
+		w:        120,
+		stack:    []Page{newHomePage(nil)},
+	}
+	h := a.header()
+	if !strings.Contains(h, "token expiration: expired") {
+		t.Errorf("header missing the expired label\n%q", h)
+	}
+	i := strings.Index(h, "token expiration: expired")
+	if esc := h[strings.LastIndexByte(h[:i], '\x1b'):i]; !strings.Contains(esc, "48;5;196") || !strings.Contains(esc, "38;5;230") {
+		t.Errorf("expired chip is not bold light-on-red\n%q", esc)
+	}
+}
+
 // TestHeaderBarBackground pins the header bar's rendering: with a
 // forced color profile, every visible segment must set the bar
 // background (a wrapping style would lose it at the first embedded
@@ -78,7 +119,7 @@ func TestHeaderBarBackground(t *testing.T) {
 	}
 	h := a.header()
 
-	for _, seg := range []string{"http://127.0.0.1:8200", "cluster: vault-cluster-x", "token: no expiry", "home"} {
+	for _, seg := range []string{"http://127.0.0.1:8200", "cluster: vault-cluster-x", "token expiration: never", "home"} {
 		if !barBackground(h, seg) {
 			t.Errorf("segment %q has no bar background\n%q", seg, h)
 		}

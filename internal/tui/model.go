@@ -63,20 +63,23 @@ func tokenTTLFrom(data map[string]interface{}) int {
 }
 
 // tokenExpiryLabel renders the token's remaining validity, counting
-// down from a TTL fetched at at: "28m30s left", "no expiry", or ""
-// when unknown.
+// down from a TTL fetched at at: "28m30s", "never", "expired", or ""
+// when unknown. The header prefixes it with "token expiration: ".
 func tokenExpiryLabel(ttl int, at time.Time) string {
 	switch {
-	case ttl < 0:
+	case ttl < 0, ttl == 0 && at.IsZero():
+		// -1 is unknown (lookup failed or not yet returned): show
+		// nothing rather than guess. A zero TTL without an anchor
+		// is the same state, not a confirmed non-expiring token.
 		return ""
 	case ttl == 0:
-		return "no expiry"
+		return "never"
 	}
 	rem := ttl - int(time.Since(at).Seconds())
 	if rem <= 0 {
 		return "expired"
 	}
-	return humanDuration(rem) + " left"
+	return humanDuration(rem)
 }
 
 // Push returns a command that navigates onto a new page.
@@ -117,11 +120,12 @@ type App struct {
 // New builds the app around an authenticated Vault client.
 func New(cl *vaultapi.Client) App {
 	return App{
-		cl:    cl,
-		addr:  cl.Address(),
-		ns:    cl.Namespace(),
-		stack: []Page{newHomePage(cl)},
-		sp:    spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("117")))),
+		cl:       cl,
+		addr:     cl.Address(),
+		ns:       cl.Namespace(),
+		tokenTTL: -1, // unknown until the first successful lookup-self
+		stack:    []Page{newHomePage(cl)},
+		sp:       spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("117")))),
 	}
 }
 
@@ -271,7 +275,11 @@ func (a App) header() string {
 	}
 	if !a.tokenAt.IsZero() {
 		if l := tokenExpiryLabel(a.tokenTTL, a.tokenAt); l != "" {
-			left += topBarInfo.Render("  token: " + l)
+			if l == "expired" {
+				left += tokenExpiredStyle.Render("  token expiration: expired ")
+			} else {
+				left += topBarInfo.Render("  token expiration: " + l)
+			}
 		}
 	}
 	right := topBarCrumb.Render(a.top().Header())

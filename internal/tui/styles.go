@@ -15,19 +15,24 @@ var (
 	// background after the first styled segment. Text on the bar
 	// uses a light foreground (252): dim greys are unreadable on the
 	// mid-purple 62 background.
-	topBarInfo     = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Background(lipgloss.Color("62"))
-	topBarCrumb    = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Background(lipgloss.Color("62"))
-	topBarBg       = lipgloss.NewStyle().Background(lipgloss.Color("62"))
-	dimStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	bottomStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	itemStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	selStyle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("213"))
-	dirStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("81"))
-	typeStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("114"))
-	errStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
-	loadingStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	activeTabStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("213"))
-	titleStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("117"))
+	topBarInfo  = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Background(lipgloss.Color("62"))
+	topBarCrumb = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Background(lipgloss.Color("62"))
+	topBarBg    = lipgloss.NewStyle().Background(lipgloss.Color("62"))
+
+	// tokenExpiredStyle paints the header's expiration chip when the
+	// token has expired: bold light text on a bright red background,
+	// deliberately breaking the bar's palette so it cannot be missed.
+	tokenExpiredStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("230")).Background(lipgloss.Color("196"))
+	dimStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	bottomStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	itemStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	selStyle          = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("213"))
+	dirStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("81"))
+	typeStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("114"))
+	errStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
+	loadingStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	activeTabStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("213"))
+	titleStyle        = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("117"))
 
 	// selBarStyle paints the selected list row as a highlight bar.
 	selBarStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("230")).Background(lipgloss.Color("62"))
