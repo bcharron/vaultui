@@ -21,9 +21,10 @@ type policyDocMsg struct {
 // policyViewPage shows one ACL policy as an alphabetical list of path
 // rules, one fixed column per capability so grants line up
 // vertically; the cursor's rule expands at the bottom with its
-// comments, capabilities, attributes and verbatim HCL block. / filters
-// the path list, h toggles the raw HCL document, which is also the
-// fallback for policies that do not parse as plain path rules.
+// comments, capabilities and attributes. enter opens the rule's raw
+// HCL (lead comment included), / filters the path list, and h toggles
+// the whole raw HCL document, which is also the fallback for
+// policies that do not parse as plain path rules.
 type policyViewPage struct {
 	cl   *vaultapi.Client
 	name string
@@ -143,6 +144,19 @@ func (p *policyViewPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			p.cur = pageJump(p.cur, p.rowsVisible(), len(vis), false)
 		case "pgdown":
 			p.cur = pageJump(p.cur, p.rowsVisible(), len(vis), true)
+		case "enter":
+			if p.cur < len(vis) {
+				// the rule's raw HCL with its lead comment
+				pp := vis[p.cur]
+				src := pp.src
+				if pp.lead != "" {
+					src = pp.lead + "\n" + src
+				}
+				return p, Push(newDetailPage(
+					fmt.Sprintf("path: %s", pp.path),
+					func() (string, []pageLink, error) { return src, nil, nil },
+				))
+			}
 		}
 	}
 	return p, nil
@@ -222,9 +236,9 @@ func (p *policyViewPage) listView() string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// expansion renders the selected rule's detail block: path title,
-// lead comments, capabilities, other attributes, and the verbatim
-// HCL block.
+// expansion renders the selected rule's summary: lead comments,
+// capabilities, other attributes. The full HCL is a keystroke away
+// (enter) rather than duplicated here.
 func (p *policyViewPage) expansion(vis []policyPath) []string {
 	if len(vis) == 0 || p.cur >= len(vis) {
 		return nil
@@ -249,15 +263,8 @@ func (p *policyViewPage) expansion(vis []policyPath) []string {
 			lines = append(lines, "  "+valStyle.Render(v))
 		}
 	}
-	if pp.src != "" {
-		lines = append(lines, dimStyle.Render("-- hcl --"))
-		for _, l := range strings.Split(pp.src, "\n") {
-			lines = append(lines, "  "+valStyle.Render(l))
-		}
-	}
 
-	// The expansion shares the content area with the list; when the
-	// selected rule is too rich, elide the tail rather than push the
+	// Rich rules (long parameter lists) elide rather than push the
 	// layout around.
 	area := max(p.h-p.h/2-4, 4)
 	if len(lines) > area {
@@ -273,5 +280,5 @@ func (p *policyViewPage) Typing() bool { return p.filt.typing() }
 func (p *policyViewPage) Loading() bool { return p.loading }
 
 func (p *policyViewPage) Hints() string {
-	return "up/down select  / filter  h raw view  esc back  ctrl+l redraw  q quit"
+	return "up/down select  enter hcl  / filter  h raw view  esc back  ctrl+l redraw  q quit"
 }

@@ -288,13 +288,17 @@ func TestEndToEnd(t *testing.T) {
 	m = typeKeys(t, m, "esc")      // back to the policy list
 
 	// pgdown jumps to the last policy; the view shows fixed
-	// capability columns, comments and the verbatim HCL block
+	// capability columns and comments, enter the raw HCL
 	m = typeKeys(t, m, "pgdown", "enter") // last policy: team-apps
 	wantView(t, m, "secret/data/apps/*", "c r u d l",
 		"capabilities: create, read, update, delete, list",
-		"apps team: full control of the apps tree",
+		"apps team: full control of the apps tree")
+	m = typeKeys(t, m, "enter") // the rule's raw HCL with its comment
+	wantView(t, m, "path: secret/data/apps/*",
+		"# apps team: full control of the apps tree",
 		"path \"secret/data/apps/*\" {")
-	m = typeKeys(t, m, "h") // raw document (comment markers only there)
+	m = typeKeys(t, m, "esc") // back to the structured view
+	m = typeKeys(t, m, "h")   // raw document (comment markers only there)
 	wantView(t, m, "# apps team", "capabilities = [")
 	m = typeKeys(t, m, "h") // back to the structured view
 	wantView(t, m, "c r u d l")
