@@ -49,7 +49,7 @@ vault policy write jwt-reader /tmp/jwt-reader.hcl
 vault auth enable jwt
 vault write auth/jwt/role/demo-service role_type=jwt \
   token_policies=jwt-signer,jwt-reader \
-  bound_audiences=demo-services user_claim=sub ttl=15m
+  bound_audiences=demo-services user_claim=sub ttl=2h
 vault write auth/jwt/role/service-reader role_type=jwt \
   token_policies=jwt-reader \
   bound_audiences=demo-services user_claim=sub ttl=15m
