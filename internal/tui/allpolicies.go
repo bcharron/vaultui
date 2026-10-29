@@ -131,10 +131,13 @@ func (p *allPoliciesPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			p.cur = pageJump(p.cur, max(p.h-3, 1), len(vis), true)
 		case "enter":
 			if p.cur < len(vis) {
-				// the grant's raw HCL, the ground truth behind the
-				// expansion's summary
+				// the grant's raw HCL with its lead comment, the
+				// ground truth behind the expansion's summary
 				g := vis[p.cur]
 				src, path, policy := g.block.src, g.block.path, g.policy
+				if g.block.lead != "" {
+					src = g.block.lead + "\n" + src
+				}
 				return p, Push(newDetailPage(
 					fmt.Sprintf("path: %s (%s)", path, policy),
 					func() (string, []pageLink, error) { return src, nil, nil },

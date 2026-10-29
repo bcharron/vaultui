@@ -12,10 +12,12 @@ import (
 // policyPath is one parsed `path` block of an ACL policy: the path
 // pattern, its lead comment lines, its capabilities, any other
 // attributes (allowed/denied parameters, wrapping TTLs, ...) in
-// document order, and the block's verbatim HCL source.
+// document order, and the block's verbatim HCL source (with the lead
+// comment's verbatim source alongside).
 type policyPath struct {
 	path     string
 	comments []string
+	lead     string // lead comment, verbatim, markers included
 	caps     []string
 	attrs    []policyAttr
 	src      string
@@ -126,6 +128,13 @@ func parsePolicyDoc(raw string) ([]policyPath, error) {
 		pp := policyPath{
 			path:     unquote(item.Keys[1].Token.Text),
 			comments: commentLines(item.LeadComment),
+		}
+		if item.LeadComment != nil {
+			var raws []string
+			for _, c := range item.LeadComment.List {
+				raws = append(raws, c.Text)
+			}
+			pp.lead = strings.Join(raws, "\n")
 		}
 		obj, ok := item.Val.(*ast.ObjectType)
 		if !ok {

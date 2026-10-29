@@ -32,6 +32,9 @@ path "transit/sign/jwt-signer" {
 	if !reflect.DeepEqual(paths[0].comments, []string{"apps team: full control of the apps tree", "second comment line"}) {
 		t.Errorf("comments = %v", paths[0].comments)
 	}
+	if paths[0].lead != "# apps team: full control of the apps tree\n# second comment line" {
+		t.Errorf("verbatim lead = %q", paths[0].lead)
+	}
 	if paths[1].comments != nil {
 		t.Errorf("unexpected comments on second path: %v", paths[1].comments)
 	}

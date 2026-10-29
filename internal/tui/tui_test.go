@@ -275,7 +275,17 @@ func TestEndToEnd(t *testing.T) {
 	m = typeKeys(t, m, "esc")      // back to the union view (query still set)
 	m = typeKeys(t, m, "/", "esc") // clear the filter
 	wantView(t, m, "cubbyhole/")
-	m = typeKeys(t, m, "esc") // back to the policy list
+	// the raw HCL view includes the grant's lead comment; filter by
+	// policy name so stray test policies cannot steal the cursor
+	m = typeKeys(t, m, "/", "t", "e", "a", "m", "-", "a", "p", "p", "s")
+	m = typeKeys(t, m, "enter") // commit the filter
+	m = typeKeys(t, m, "enter") // raw hcl with comment
+	wantView(t, m, "path: secret/data/apps/* (team-apps)",
+		"# apps team: full control of the apps tree",
+		"capabilities = [")
+	m = typeKeys(t, m, "esc")      // back to the union view
+	m = typeKeys(t, m, "/", "esc") // clear the filter
+	m = typeKeys(t, m, "esc")      // back to the policy list
 
 	// pgdown jumps to the last policy; the view shows fixed
 	// capability columns, comments and the verbatim HCL block
