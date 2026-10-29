@@ -37,6 +37,26 @@ func barForeground(h, s string) bool {
 	return strings.Contains(h[esc:i], "38;5;252") || strings.Contains(h[esc:i], "38;5;230")
 }
 
+func TestTokenRefreshDue(t *testing.T) {
+	now := time.Now()
+	cases := []struct {
+		name              string
+		anchor, lastProbe time.Time
+		want              bool
+	}{
+		{"fresh anchor", now.Add(-10 * time.Second), time.Time{}, false},
+		{"anchor a minute old, never probed", now.Add(-61 * time.Second), time.Time{}, true},
+		{"probed recently", now.Add(-70 * time.Second), now.Add(-5 * time.Second), false},
+		{"probe also a minute old", now.Add(-70 * time.Second), now.Add(-61 * time.Second), true},
+		{"no anchor yet", time.Time{}, time.Time{}, false},
+	}
+	for _, c := range cases {
+		if got := tokenRefreshDue(c.anchor, c.lastProbe, now); got != c.want {
+			t.Errorf("%s: tokenRefreshDue = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
 // TestHeaderBarBackground pins the header bar's rendering: with a
 // forced color profile, every visible segment must set the bar
 // background (a wrapping style would lose it at the first embedded

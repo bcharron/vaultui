@@ -31,6 +31,15 @@ func tickEvery(d time.Duration) tea.Cmd {
 	return tea.Tick(d, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
+// tokenRefreshDue reports whether the periodic lookup-self re-fetch is
+// due: a minute after the last successful anchor, at most one attempt
+// per minute even when attempts fail.
+func tokenRefreshDue(anchor, lastProbe, now time.Time) bool {
+	return !anchor.IsZero() &&
+		now.Sub(anchor) >= time.Minute &&
+		(lastProbe.IsZero() || now.Sub(lastProbe) >= time.Minute)
+}
+
 // Push returns a command that navigates onto a new page.
 func Push(p Page) tea.Cmd { return func() tea.Msg { return pushMsg{p} } }
 
@@ -54,15 +63,16 @@ type Page interface {
 // (header with address, cluster and token expiry, footer with spinner
 // and key hints).
 type App struct {
-	cl          *vaultapi.Client
-	addr        string
-	ns          string
-	clusterName string
-	tokenTTL    int
-	tokenAt     time.Time
-	stack       []Page
-	sp          spinner.Model
-	w, h        int
+	cl           *vaultapi.Client
+	addr         string
+	ns           string
+	clusterName  string
+	tokenTTL     int
+	tokenAt      time.Time
+	tokenProbeAt time.Time // last periodic lookup-self attempt
+	stack        []Page
+	sp           spinner.Model
+	w, h         int
 }
 
 // New builds the app around an authenticated Vault client.
@@ -146,9 +156,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		cmds := []tea.Cmd{tickEvery(time.Second)}
-		// The estimate ran out: re-check the real TTL once (the token
-		// may have been renewed) instead of parking at "expired".
-		if a.tokenTTL > 0 && int(time.Since(a.tokenAt).Seconds()) >= a.tokenTTL {
+		// Re-anchor the countdown every minute with a fresh lookup, so
+		// renewed or otherwise changed TTLs are picked up. Attempts are
+		// capped at one per minute even when they fail.
+		if tokenRefreshDue(a.tokenAt, a.tokenProbeAt, time.Now()) {
+			a.tokenProbeAt = time.Now()
 			cl := a.cl
 			cmds = append(cmds, func() tea.Msg {
 				data, err := vault.LookupSelf(cl)
