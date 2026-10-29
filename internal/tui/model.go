@@ -2,11 +2,14 @@ package tui
 
 import (
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	vaultapi "github.com/hashicorp/vault/api"
+
+	"github.com/bcharron/vaultui/internal/vault"
 )
 
 // resizeMsg carries the content-area dimensions (width x height) to every
@@ -16,6 +19,17 @@ type resizeMsg struct{ w, h int }
 // pushMsg/popMsg drive the navigation stack.
 type pushMsg struct{ page Page }
 type popMsg struct{}
+
+// tickMsg drives the token countdown: the header and home status line
+// recompute the estimated time left from the launch TTL on every tick.
+type tickMsg time.Time
+
+// tickEvery returns a command that delivers a tickMsg after d. Do not
+// feed tickMsg into the test harness's drive loop: each tick schedules
+// the next, which would spin it forever.
+func tickEvery(d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(t time.Time) tea.Msg { return tickMsg(t) })
+}
 
 // Push returns a command that navigates onto a new page.
 func Push(p Page) tea.Cmd { return func() tea.Msg { return pushMsg{p} } }
@@ -44,7 +58,8 @@ type App struct {
 	addr        string
 	ns          string
 	clusterName string
-	tokenExpiry string
+	tokenTTL    int
+	tokenAt     time.Time
 	stack       []Page
 	sp          spinner.Model
 	w, h        int
@@ -64,7 +79,7 @@ func New(cl *vaultapi.Client) App {
 func (a App) top() Page { return a.stack[len(a.stack)-1] }
 
 func (a App) Init() tea.Cmd {
-	return tea.Batch(a.top().Init(), a.sp.Tick)
+	return tea.Batch(a.top().Init(), a.sp.Tick, tickEvery(time.Second))
 }
 
 func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -121,11 +136,26 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.broadcast(msg)
 
 	case homeTokenMsg:
-		// ... and its lookup-self feeds the header's token expiry.
+		// ... and its lookup-self anchors the countdown of the token
+		// expiry shown in the header.
 		if msg.err == nil {
-			a.tokenExpiry = tokenExpiryLabel(msg.data)
+			a.tokenTTL = tokenTTLFrom(msg.data)
+			a.tokenAt = time.Now()
 		}
 		return a.broadcast(msg)
+
+	case tickMsg:
+		cmds := []tea.Cmd{tickEvery(time.Second)}
+		// The estimate ran out: re-check the real TTL once (the token
+		// may have been renewed) instead of parking at "expired".
+		if a.tokenTTL > 0 && int(time.Since(a.tokenAt).Seconds()) >= a.tokenTTL {
+			cl := a.cl
+			cmds = append(cmds, func() tea.Msg {
+				data, err := vault.LookupSelf(cl)
+				return homeTokenMsg{data: data, err: err}
+			})
+		}
+		return a, tea.Batch(cmds...)
 
 	default:
 		// Data messages go to every page in the stack so that pages
@@ -172,8 +202,10 @@ func (a App) header() string {
 	if a.clusterName != "" {
 		left += topBarInfo.Render("  cluster: " + a.clusterName)
 	}
-	if a.tokenExpiry != "" {
-		left += topBarInfo.Render("  token: " + a.tokenExpiry)
+	if !a.tokenAt.IsZero() {
+		if l := tokenExpiryLabel(a.tokenTTL, a.tokenAt); l != "" {
+			left += topBarInfo.Render("  token: " + l)
+		}
 	}
 	right := topBarCrumb.Render(a.top().Header())
 	pad := w - lipgloss.Width(left) - lipgloss.Width(right) - 1

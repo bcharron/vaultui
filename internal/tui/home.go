@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbletea"
 	vaultapi "github.com/hashicorp/vault/api"
@@ -35,12 +36,14 @@ type homePage struct {
 	w, h  int
 
 	// statusPending counts the in-flight status fetches; the maps are
-	// filled in as they arrive.
+	// filled in as they arrive. tokenAt anchors the countdown shown
+	// while the session runs.
 	statusPending int
 	seal          map[string]interface{}
 	sealErr       error
 	health        map[string]interface{}
 	token         map[string]interface{}
+	tokenAt       time.Time
 }
 
 func newHomePage(cl *vaultapi.Client) *homePage {
@@ -98,6 +101,7 @@ func (p *homePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		p.statusPending--
 		if msg.err == nil {
 			p.token = msg.data
+			p.tokenAt = time.Now()
 		}
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -160,7 +164,7 @@ func (p *homePage) statusLine() string {
 	if s := statusSummary(p.seal, p.health); s != "" {
 		parts = append(parts, s)
 	}
-	if s := tokenSummary(p.token); s != "" {
+	if s := tokenSummary(p.token, p.tokenAt); s != "" {
 		parts = append(parts, s)
 	}
 	if len(parts) == 0 {
@@ -169,9 +173,10 @@ func (p *homePage) statusLine() string {
 	return strings.Join(parts, dimStyle.Render(" · "))
 }
 
-// tokenSummary renders the "token: root (no expiry)" segment of the
-// home status line from lookup-self data; empty when unavailable.
-func tokenSummary(data map[string]interface{}) string {
+// tokenSummary renders the "token: app (28m30s left)" segment of the
+// home status line from lookup-self data fetched at at; empty when
+// unavailable.
+func tokenSummary(data map[string]interface{}, at time.Time) string {
 	if data == nil {
 		return ""
 	}
@@ -179,23 +184,36 @@ func tokenSummary(data map[string]interface{}) string {
 	if name == "" {
 		name = "token"
 	}
-	if l := tokenExpiryLabel(data); l != "" {
+	if l := tokenExpiryLabel(tokenTTLFrom(data), at); l != "" {
 		return dimStyle.Render(fmt.Sprintf("token: %s (%s)", name, l))
 	}
 	return dimStyle.Render("token: " + name)
 }
 
-// tokenExpiryLabel renders the token's remaining validity: "30m left",
-// "no expiry", or "" when the TTL is unknown.
-func tokenExpiryLabel(data map[string]interface{}) string {
-	switch ttl := data["ttl"].(type) {
-	case float64:
-		if ttl > 0 {
-			return humanDuration(int(ttl)) + " left"
-		}
+// tokenTTLFrom extracts the remaining TTL in seconds from lookup-self
+// data; -1 when unknown.
+func tokenTTLFrom(data map[string]interface{}) int {
+	if ttl, ok := data["ttl"].(float64); ok {
+		return int(ttl)
+	}
+	return -1
+}
+
+// tokenExpiryLabel renders the token's remaining validity, counting
+// down from a TTL fetched at at: "28m30s left", "no expiry", or ""
+// when unknown.
+func tokenExpiryLabel(ttl int, at time.Time) string {
+	switch {
+	case ttl < 0:
+		return ""
+	case ttl == 0:
 		return "no expiry"
 	}
-	return ""
+	rem := ttl - int(time.Since(at).Seconds())
+	if rem <= 0 {
+		return "expired"
+	}
+	return humanDuration(rem) + " left"
 }
 
 func (p *homePage) Header() string { return "home" }

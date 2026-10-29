@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
@@ -50,7 +51,8 @@ func TestHeaderBarBackground(t *testing.T) {
 	a := App{
 		addr:        "http://127.0.0.1:8200",
 		clusterName: "vault-cluster-x",
-		tokenExpiry: "no expiry",
+		tokenTTL:    0,
+		tokenAt:     time.Now(),
 		w:           120,
 		stack:       []Page{newHomePage(nil)},
 	}
