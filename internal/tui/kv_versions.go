@@ -237,7 +237,7 @@ func (p *kvVersionsPage) Header() string {
 }
 
 func (p *kvVersionsPage) Hints() string {
-	return "up/down select  enter view version  / filter  r refresh  esc back  q quit"
+	return "up/down select  enter view version  / filter  r refresh  esc back  ctrl+l redraw  q quit"
 }
 
 func (p *kvVersionsPage) Typing() bool { return p.filt.typing() }

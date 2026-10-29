@@ -191,5 +191,5 @@ func (p *kvPage) Typing() bool { return p.filt.typing() }
 func (p *kvPage) Loading() bool { return p.loading }
 
 func (p *kvPage) Hints() string {
-	return "up/down select  enter open  v versions  / filter  r refresh  esc back  q quit"
+	return "up/down select  enter open  v versions  / filter  r refresh  esc back  ctrl+l redraw  q quit"
 }

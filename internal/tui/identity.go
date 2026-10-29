@@ -270,7 +270,7 @@ func (p *identityPage) viewList(names []string, loading bool, listErr error, cur
 func (p *identityPage) Header() string { return "identity" }
 
 func (p *identityPage) Hints() string {
-	return "left/right tabs  up/down select  enter open  / filter  r refresh  esc back  q quit"
+	return "left/right tabs  up/down select  enter open  / filter  r refresh  esc back  ctrl+l redraw  q quit"
 }
 
 func (p *identityPage) Typing() bool { return p.filt.typing() }

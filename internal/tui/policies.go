@@ -148,5 +148,5 @@ func (p *policiesPage) Typing() bool { return p.filt.typing() }
 func (p *policiesPage) Loading() bool { return p.loading }
 
 func (p *policiesPage) Hints() string {
-	return "up/down select  enter view policy  / filter  r refresh  esc back  q quit"
+	return "up/down select  enter view policy  / filter  r refresh  esc back  ctrl+l redraw  q quit"
 }

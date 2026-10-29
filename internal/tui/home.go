@@ -91,5 +91,5 @@ func (p *homePage) Header() string { return "home" }
 func (p *homePage) Typing() bool { return false }
 
 func (p *homePage) Hints() string {
-	return "up/down select  enter open  q quit"
+	return "up/down select  enter open  ctrl+l redraw  q quit"
 }

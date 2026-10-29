@@ -181,7 +181,7 @@ func (p *leasesPage) Header() string {
 }
 
 func (p *leasesPage) Hints() string {
-	return "up/down select  enter open  / filter  r refresh  esc back  q quit"
+	return "up/down select  enter open  / filter  r refresh  esc back  ctrl+l redraw  q quit"
 }
 
 func (p *leasesPage) Typing() bool { return p.filt.typing() }

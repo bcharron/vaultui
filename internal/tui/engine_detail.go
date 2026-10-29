@@ -650,7 +650,7 @@ func (p *engineDetailPage) Loading() bool {
 }
 
 func (p *engineDetailPage) Hints() string {
-	return "left/right tabs  up/down select  enter open  v versions  / filter  r refresh  esc back  q quit"
+	return "left/right tabs  up/down select  enter open  v versions  / filter  r refresh  esc back  ctrl+l redraw  q quit"
 }
 
 // engineConfigDoc reads each engine config endpoint and renders them as

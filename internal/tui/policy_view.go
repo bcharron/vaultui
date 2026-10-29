@@ -273,5 +273,5 @@ func (p *policyViewPage) Typing() bool { return p.filt.typing() }
 func (p *policyViewPage) Loading() bool { return p.loading }
 
 func (p *policyViewPage) Hints() string {
-	return "up/down select  / filter  h raw view  esc back  q quit"
+	return "up/down select  / filter  h raw view  esc back  ctrl+l redraw  q quit"
 }

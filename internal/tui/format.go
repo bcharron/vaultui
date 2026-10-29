@@ -17,6 +17,9 @@ func formatMap(m map[string]interface{}) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+// writeMap renders the map's sorted entries as "key: value" lines.
+// Nested maps and arrays of maps (e.g. identity aliases) become
+// indented sections instead of Go's default map printing.
 func writeMap(b *strings.Builder, m map[string]interface{}, indent string) {
 	keys := make([]string, 0, len(m))
 	for k := range m {
@@ -30,12 +33,37 @@ func writeMap(b *strings.Builder, m map[string]interface{}, indent string) {
 			writeMap(b, sub, indent+"  ")
 			continue
 		}
+		if arr, ok := v.([]interface{}); ok && hasMapElem(arr) {
+			fmt.Fprintf(b, "%s%s\n", keyStyle.Render(indent+k), dimStyle.Render(":"))
+			for i, e := range arr {
+				if i > 0 {
+					b.WriteString("\n")
+				}
+				if em, ok := e.(map[string]interface{}); ok {
+					writeMap(b, em, indent+"  ")
+					continue
+				}
+				fmt.Fprintf(b, "%s%s\n", indent+"  ", styledValue(e))
+			}
+			continue
+		}
 		val := styledValue(v)
 		if f, ok := v.(float64); ok {
 			val += ttlSuffix(k, strconv.FormatFloat(f, 'f', -1, 64))
 		}
 		fmt.Fprintf(b, "%s%s %s\n", keyStyle.Render(indent+k), dimStyle.Render(":"), val)
 	}
+}
+
+// hasMapElem reports whether the array contains at least one map,
+// making it render as a nested section rather than an inline list.
+func hasMapElem(arr []interface{}) bool {
+	for _, e := range arr {
+		if _, ok := e.(map[string]interface{}); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // styledValue renders a decoded JSON value with type-based colors:

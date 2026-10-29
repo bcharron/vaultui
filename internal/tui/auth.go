@@ -155,7 +155,7 @@ func (p *authPage) Typing() bool { return p.filt.typing() }
 func (p *authPage) Loading() bool { return p.loading }
 
 func (p *authPage) Hints() string {
-	return "up/down select  enter open auth method  / filter  r refresh  esc back  q quit"
+	return "up/down select  enter open auth method  / filter  r refresh  esc back  ctrl+l redraw  q quit"
 }
 
 // authRoleTabLabel names the second tab per auth type.
@@ -508,5 +508,5 @@ func (p *authDetailPage) Loading() bool {
 }
 
 func (p *authDetailPage) Hints() string {
-	return "left/right tabs  up/down select  enter open  / filter roles  r refresh  esc back  q quit"
+	return "left/right tabs  up/down select  enter open  / filter roles  r refresh  esc back  ctrl+l redraw  q quit"
 }

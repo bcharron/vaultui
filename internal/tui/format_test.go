@@ -87,6 +87,43 @@ func TestStatusSummary(t *testing.T) {
 	}
 }
 
+func TestFormatMapArraysOfMaps(t *testing.T) {
+	m := map[string]interface{}{
+		"name":     "bob",
+		"policies": []interface{}{"default", "jwt-reader"},
+		"aliases": []interface{}{
+			map[string]interface{}{
+				"id":              "a1",
+				"canonical_id":    "c1",
+				"custom_metadata": nil,
+				"mount_type":      "jwt",
+			},
+			map[string]interface{}{
+				"id":           "a2",
+				"canonical_id": "c2",
+			},
+		},
+	}
+	out := formatMap(m)
+	for _, want := range []string{
+		"name: bob",
+		"policies: default, jwt-reader", // scalar arrays stay inline
+		"aliases:",
+		"  id: a1",
+		"  canonical_id: c1",
+		"  custom_metadata: null", // not Go's "<nil>"
+		"  mount_type: jwt",
+		"  id: a2",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("formatMap missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "map[") {
+		t.Errorf("formatMap leaked Go map printing:\n%s", out)
+	}
+}
+
 func TestTokenExpiryLabel(t *testing.T) {
 	at := time.Now().Add(-90 * time.Second)
 	if got := tokenExpiryLabel(1800, at); got != "28m30s left" {

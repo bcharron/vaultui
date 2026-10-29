@@ -156,7 +156,7 @@ func (p *enginesPage) Typing() bool { return p.filt.typing() }
 func (p *enginesPage) Loading() bool { return p.loading }
 
 func (p *enginesPage) Hints() string {
-	return "up/down select  enter open engine  / filter  r refresh  esc back  q quit"
+	return "up/down select  enter open engine  / filter  r refresh  esc back  ctrl+l redraw  q quit"
 }
 
 // window(cur, off, n, rows) scrolls a fixed-size window over n items
