@@ -37,15 +37,17 @@ type Page interface {
 }
 
 // App is the root model: it owns the page stack and the global chrome
-// (header with address, footer with spinner and key hints).
+// (header with address, cluster and token expiry, footer with spinner
+// and key hints).
 type App struct {
-	cl    *vaultapi.Client
-	addr  string
-	token string
-	ns    string
-	stack []Page
-	sp    spinner.Model
-	w, h  int
+	cl          *vaultapi.Client
+	addr        string
+	ns          string
+	clusterName string
+	tokenExpiry string
+	stack       []Page
+	sp          spinner.Model
+	w, h        int
 }
 
 // New builds the app around an authenticated Vault client.
@@ -53,7 +55,6 @@ func New(cl *vaultapi.Client) App {
 	return App{
 		cl:    cl,
 		addr:  cl.Address(),
-		token: maskToken(cl.Token()),
 		ns:    cl.Namespace(),
 		stack: []Page{newHomePage(cl)},
 		sp:    spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("117")))),
@@ -110,6 +111,22 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.sp, cmd = a.sp.Update(msg)
 		return a, cmd
 
+	case homeHealthMsg:
+		// The home screen's fetch also feeds the header's cluster name.
+		if msg.err == nil {
+			if n, ok := msg.health["cluster_name"].(string); ok {
+				a.clusterName = n
+			}
+		}
+		return a.broadcast(msg)
+
+	case homeTokenMsg:
+		// ... and its lookup-self feeds the header's token expiry.
+		if msg.err == nil {
+			a.tokenExpiry = tokenExpiryLabel(msg.data)
+		}
+		return a.broadcast(msg)
+
 	default:
 		// Data messages go to every page in the stack so that pages
 		// buried under others still receive their async results.
@@ -141,14 +158,21 @@ func (a App) dims() resizeMsg {
 	return resizeMsg{max(w-4, 1), max(h-2, 1)}
 }
 
-// header renders the full-width top bar: app name, address and masked
-// token on the left, the current page's breadcrumb on the right.
+// header renders the full-width top bar: app name and address on the
+// left with the cluster name and token expiry once they are known,
+// the current page's breadcrumb on the right.
 func (a App) header() string {
 	w := a.w
 	if w <= 0 {
 		w = 80
 	}
-	left := "vaultui " + dimStyle.Render(a.addr) + "  " + dimStyle.Render(a.token)
+	left := "vaultui " + dimStyle.Render(a.addr)
+	if a.clusterName != "" {
+		left += "  " + dimStyle.Render("cluster: "+a.clusterName)
+	}
+	if a.tokenExpiry != "" {
+		left += "  " + dimStyle.Render("token: "+a.tokenExpiry)
+	}
 	right := breadStyle.Render(a.top().Header())
 	pad := w - lipgloss.Width(left) - lipgloss.Width(right) - 2
 	if pad < 1 {
@@ -172,11 +196,4 @@ func (a App) View() string {
 		footer = a.sp.View() + " " + footer
 	}
 	return header + "\n" + content + "\n" + footer
-}
-
-func maskToken(t string) string {
-	if len(t) > 8 {
-		return t[:4] + "..." + t[len(t)-4:]
-	}
-	return "****"
 }

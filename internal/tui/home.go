@@ -179,13 +179,23 @@ func tokenSummary(data map[string]interface{}) string {
 	if name == "" {
 		name = "token"
 	}
-	if ttl, ok := data["ttl"].(float64); ok {
-		if ttl > 0 {
-			return dimStyle.Render(fmt.Sprintf("token: %s (%s left)", name, humanDuration(int(ttl))))
-		}
-		return dimStyle.Render("token: " + name + " (no expiry)")
+	if l := tokenExpiryLabel(data); l != "" {
+		return dimStyle.Render(fmt.Sprintf("token: %s (%s)", name, l))
 	}
 	return dimStyle.Render("token: " + name)
+}
+
+// tokenExpiryLabel renders the token's remaining validity: "30m left",
+// "no expiry", or "" when the TTL is unknown.
+func tokenExpiryLabel(data map[string]interface{}) string {
+	switch ttl := data["ttl"].(type) {
+	case float64:
+		if ttl > 0 {
+			return humanDuration(int(ttl)) + " left"
+		}
+		return "no expiry"
+	}
+	return ""
 }
 
 func (p *homePage) Header() string { return "home" }
