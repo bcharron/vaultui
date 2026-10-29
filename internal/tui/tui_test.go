@@ -148,7 +148,7 @@ func wantView(t *testing.T, m tea.Model, wants ...string) {
 // openMenu resets the home cursor and opens the named menu item.
 func openMenu(t *testing.T, m tea.Model, item string) tea.Model {
 	t.Helper()
-	items := []string{"ACL Policies", "Auth Methods", "Identity", "Leases", "Secret Engines", "Server Status", "Token Info"}
+	items := []string{"Auth Methods", "Identity", "Leases", "Policies", "Secret Engines", "Server Status", "Token Info"}
 	idx := -1
 	for i, s := range items {
 		if s == item {
@@ -260,7 +260,7 @@ func TestEndToEnd(t *testing.T) {
 	m = typeKeys(t, m, "esc", "esc", "esc", "esc")
 
 	// Policies: the union view merges every policy's paths
-	m = openMenu(t, m, "ACL Policies")
+	m = openMenu(t, m, "Policies")
 	wantView(t, m, "All policies (union)", "default", "root", "team-apps", "jwt-signer", "jwt-reader")
 	m = typeKeys(t, m, "enter") // union of all policies
 	wantView(t, m, "auth/token/lookup-self", "secret/data/apps/*", "cubbyhole/", "team-apps", "c r u d l")
@@ -308,7 +308,7 @@ func TestEndToEnd(t *testing.T) {
 	wantView(t, m, "Secret Engines")
 
 	// default policy: / filters the path list
-	m = openMenu(t, m, "ACL Policies")
+	m = openMenu(t, m, "Policies")
 	m = typeKeys(t, m, "down", "enter") // default (below the union row)
 	m = typeKeys(t, m, "/", "r", "e", "n", "e", "w")
 	wantView(t, m, "auth/token/renew-self")
@@ -321,7 +321,7 @@ func TestEndToEnd(t *testing.T) {
 	wantView(t, m, "Secret Engines")
 
 	// Filter: "/" narrows the policy list live, esc clears it
-	m = openMenu(t, m, "ACL Policies")
+	m = openMenu(t, m, "Policies")
 	m = typeKeys(t, m, "/", "j", "w", "t")
 	wantView(t, m, "jwt-signer", "jwt-reader")
 	if strings.Contains(m.View(), "team-apps") {

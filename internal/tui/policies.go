@@ -59,7 +59,7 @@ func newPoliciesPage(cl *vaultapi.Client) *policiesPage {
 		return Push(newPolicyDetailPage(p.cl, name))
 	}
 	p.reload = p.Init
-	p.title = "  " + dimStyle.Render("ACL POLICIES")
+	p.title = "  " + dimStyle.Render("POLICIES")
 	p.noun = "policies"
 	p.headLines = 2
 	p.loadingText = "loading policies ..."

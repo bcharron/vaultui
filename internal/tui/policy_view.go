@@ -229,7 +229,7 @@ func (p *policyViewPage) listView() string {
 		b.WriteString("  " + itemStyle.Render(path) + "  " + dimStyle.Render(cols) + "\n")
 	}
 
-	b.WriteString("\n")
+	b.WriteString(hRule(p.w) + "\n")
 	for _, l := range p.expansion(vis) {
 		b.WriteString(l + "\n")
 	}

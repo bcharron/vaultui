@@ -55,6 +55,15 @@ func selBar(w int, row string) string {
 	return selBarStyle.Render(row)
 }
 
+// hRule renders a dim horizontal rule spanning the content width,
+// separating a list from the detail area below it.
+func hRule(w int) string {
+	if w <= 0 {
+		w = 1
+	}
+	return dimStyle.Render(strings.Repeat("─", w))
+}
+
 // listInfo renders the dim trailing count shown next to a list title:
 // "12 keys", or "12/120 keys" once the list is taller than one screen.
 func listInfo(cur, total, rows int, noun string) string {

@@ -227,7 +227,7 @@ func (p *allPoliciesPage) View() string {
 		b.WriteString("  " + itemStyle.Render(path) + "  " + dimStyle.Render(cols) + "  " + dimStyle.Render(pols) + "\n")
 	}
 
-	b.WriteString("\n")
+	b.WriteString(hRule(p.w) + "\n")
 	for _, l := range p.expansion(vis) {
 		b.WriteString(l + "\n")
 	}
