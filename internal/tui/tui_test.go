@@ -393,14 +393,17 @@ func TestEndToEnd(t *testing.T) {
 	wantView(t, m, "renewable: false", "ttl: 0", "auth/token/create/")
 	m = typeKeys(t, m, "esc", "esc", "esc", "esc", "esc", "esc")
 
-	// Identity: entities and groups with policy links
+	// Identity: entities and groups each get their own screen
 	m = openMenu(t, m, "Identity")
-	wantView(t, m, "[Entities]", "bob", "service-a")
-	m = typeKeys(t, m, "enter") // bob
+	wantView(t, m, "Entities", "Groups", "bob", "service-a")               // the preview of the highlighted row
+	m = typeKeys(t, m, "enter")                                            // the Entities row opens its own screen
+	wantView(t, m, "bob", "service-a", "policies: jwt-reader, jwt-signer") // the expansion fetched the highlighted entity
+	m = typeKeys(t, m, "enter")                                            // bob
 	wantView(t, m, "linked policies:", "[1] jwt-reader", "[2] jwt-signer", "email: bob@example.com")
-	m = typeKeys(t, m, "esc")
-	m = typeKeys(t, m, "right")
-	wantView(t, m, "[Groups]", "apps-team")
+	m = typeKeys(t, m, "esc")           // back to the entities screen
+	m = typeKeys(t, m, "esc")           // back to the identity page
+	m = typeKeys(t, m, "down", "enter") // the Groups row opens its own screen
+	wantView(t, m, "apps-team")
 	m = typeKeys(t, m, "enter")
 	wantView(t, m, "linked policies:", "[1] jwt-signer", "member_entity_ids:")
 
