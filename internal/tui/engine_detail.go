@@ -10,6 +10,10 @@ import (
 	"github.com/bcharron/vaultui/internal/vault"
 )
 
+// engineDetailPage is the engine's own screen: a short list of what
+// the engine has — the tune config, the engine's own config (when the
+// type has one), and one row per role group, each opening the group's
+// own list screen. The selected row's summary expands at the bottom.
 type engineDetailPage struct {
 	cl   *vaultapi.Client
 	m    vault.Mount
@@ -22,20 +26,20 @@ type engineDetailPage struct {
 
 	// ecfgEndpoints are the engine's own config endpoints (aws
 	// config/root+lease, gcp config); non-empty only for engine types
-	// that have them, and shown as a second synthetic row.
+	// that have them, and shown as a second synthetic row whose
+	// expansion shows the rendered document.
 	ecfgEndpoints []string
+	ecfgLoading   bool
+	ecfgText      string
 
-	// groups are the role-like sections of the list (Roles, Keys,
-	// Rolesets, ...), one per RoleGroup of the engine type.
+	// groups are the engine's role groups (Roles, Keys, Rolesets,
+	// ...); each row opens the group's own screen.
 	groups []groupState
 
-	// cfgs caches role configs for the expansion pane, keyed by
-	// endpoint + "/" + name and fetched lazily as the cursor moves.
-	cfgs     map[string]*roleCfg
 	cur, off int
 }
 
-// groupState is one role-like section of the engine page's list.
+// groupState is one role group of the engine page's list.
 type groupState struct {
 	label    string
 	endpoint string
@@ -50,24 +54,25 @@ type tuneLoadedMsg struct {
 	err  error
 }
 
-// engineRowKind distinguishes the rows of the engine page's single
-// list: the synthetic config rows on top, the per-group section
-// headers, and the role-like items.
+type engineCfgLoadedMsg struct {
+	path string
+	text string
+}
+
+// engineRowKind distinguishes the rows of the engine page's list.
 type engineRowKind int
 
 const (
 	rowTune engineRowKind = iota
 	rowEngineCfg
-	rowHeader
-	rowRole
+	rowGroup
 )
 
 // engineRow is one row of the engine page's list.
 type engineRow struct {
 	kind  engineRowKind
-	label string // synthetic rows and section headers
+	label string
 	ep    string // role group endpoint
-	name  string // role name
 }
 
 const (
@@ -81,8 +86,8 @@ func newEngineDetailPage(cl *vaultapi.Client, m vault.Mount) *engineDetailPage {
 		m:             m,
 		cfgLoading:    true,
 		ecfgEndpoints: vault.EngineConfigEndpoints(m.Type),
-		cfgs:          map[string]*roleCfg{},
 	}
+	p.ecfgLoading = p.hasEngineConfig()
 	for _, g := range vault.RoleGroups(m.Type) {
 		p.groups = append(p.groups, groupState{
 			label:    g.Label,
@@ -106,6 +111,12 @@ func (p *engineDetailPage) Init() tea.Cmd {
 		cmds = append(cmds, func() tea.Msg {
 			roles, err := vault.ListRoles(cl, m.Path, g.endpoint)
 			return rolesLoadedMsg{path: m.Path, endpoint: g.endpoint, roles: roles, err: err}
+		})
+	}
+	if p.hasEngineConfig() {
+		eps := p.ecfgEndpoints
+		cmds = append(cmds, func() tea.Msg {
+			return engineCfgLoadedMsg{path: m.Path, text: engineConfigDoc(cl, m.Path, eps)}
 		})
 	}
 	return tea.Batch(cmds...)
@@ -134,6 +145,12 @@ func (p *engineDetailPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		if msg.err == nil {
 			p.cfgText = formatPairs(msg.kv)
 		}
+	case engineCfgLoadedMsg:
+		if msg.path != p.m.Path {
+			return p, nil
+		}
+		p.ecfgLoading = false
+		p.ecfgText = msg.text
 	case rolesLoadedMsg:
 		if msg.path != p.m.Path {
 			return p, nil
@@ -145,15 +162,6 @@ func (p *engineDetailPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		g.loading = false
 		g.err = msg.err
 		g.roles = msg.roles
-	case roleCfgMsg:
-		if msg.path != p.m.Path {
-			return p, nil
-		}
-		if c := p.cfgs[msg.key]; c != nil {
-			c.loading = false
-			c.err = msg.err
-			c.data = msg.data
-		}
 	case tea.KeyMsg:
 		return p.updateKeys(msg)
 	}
@@ -164,7 +172,7 @@ func (p *engineDetailPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 	if p.filt.typing() {
 		if p.filt.update(msg) {
 			p.cur, p.off = 0, 0
-			return p, p.ensureCfg()
+			return p, nil
 		}
 	} else if msg.String() == "/" {
 		p.filt.active = true
@@ -173,13 +181,17 @@ func (p *engineDetailPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 	vis := p.visible()
 	switch msg.String() {
 	case "up", "k":
-		p.move(vis, -1)
+		if p.cur > 0 {
+			p.cur--
+		}
 	case "down", "j":
-		p.move(vis, 1)
+		if p.cur < len(vis)-1 {
+			p.cur++
+		}
 	case "pgup":
-		p.seek(vis, pageJump(p.cur, p.rowsVisible(), len(vis), false), -1)
+		p.cur = pageJump(p.cur, p.rowsVisible(), len(vis), false)
 	case "pgdown":
-		p.seek(vis, pageJump(p.cur, p.rowsVisible(), len(vis), true), 1)
+		p.cur = pageJump(p.cur, p.rowsVisible(), len(vis), true)
 	case "r":
 		np := newEngineDetailPage(p.cl, p.m)
 		np.w, np.h = p.w, p.h
@@ -191,56 +203,11 @@ func (p *engineDetailPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 			}
 		}
 	}
-	return p, p.ensureCfg()
+	return p, nil
 }
 
-// move steps the cursor by one, skipping group headers (they carry no
-// item of their own).
-func (p *engineDetailPage) move(vis []engineRow, step int) {
-	for cur := p.cur; ; {
-		cur += step
-		if cur < 0 || cur >= len(vis) {
-			return
-		}
-		if vis[cur].kind != rowHeader {
-			p.cur = cur
-			return
-		}
-	}
-}
-
-// seek lands the cursor on target, or the nearest item row in
-// direction d when target is a group header.
-func (p *engineDetailPage) seek(vis []engineRow, target, d int) {
-	for cur := target; cur >= 0 && cur < len(vis); cur += d {
-		if vis[cur].kind != rowHeader {
-			p.cur = cur
-			return
-		}
-	}
-}
-
-// ensureCfg prefetches the selected item's configuration for the
-// expansion pane; already-cached items are not re-fetched.
-func (p *engineDetailPage) ensureCfg() tea.Cmd {
-	vis := p.visible()
-	if p.cur >= len(vis) {
-		return nil
-	}
-	r := vis[p.cur]
-	if r.kind != rowRole {
-		return nil
-	}
-	key := r.ep + "/" + r.name
-	if _, ok := p.cfgs[key]; ok {
-		return nil
-	}
-	p.cfgs[key] = &roleCfg{loading: true}
-	return roleCfgFetch(p.cl, p.m.Path, r.ep, r.name)
-}
-
-// enter opens the selected row: the synthetic rows and items push
-// ordinary stacked pages; section headers do nothing.
+// enter opens the selected row: both config rows push their document;
+// a group row pushes the group's own list screen.
 func (p *engineDetailPage) enter(r engineRow) tea.Cmd {
 	cl, m := p.cl, p.m
 	switch r.kind {
@@ -263,30 +230,16 @@ func (p *engineDetailPage) enter(r engineRow) tea.Cmd {
 				return engineConfigDoc(cl, m.Path, eps), nil, nil
 			},
 		))
-	case rowRole:
-		endpoint, name := r.ep, r.name
-		label := "role"
-		if g := p.groupByEndpoint(r.ep); g != nil {
-			label = g.label
-		}
-		dp := newDetailPage(
-			fmt.Sprintf("%s: %s", label, name),
-			func() (string, []pageLink, error) {
-				data, err := vault.ReadRole(cl, m.Path, endpoint, name)
-				if err != nil {
-					return "", nil, err
-				}
-				return formatMap(data), policyLinks(cl, extractPolicies(data)), nil
-			},
-		)
-		dp.linkTitle = "linked policies"
-		return Push(dp)
+	case rowGroup:
+		g := p.groupByEndpoint(r.ep)
+		crumb := fmt.Sprintf("engines / %s / %s", strings.TrimSuffix(m.Path, "/"), strings.ToLower(g.label))
+		return Push(newRoleListPage(cl, m.Path, g.endpoint, g.label, crumb))
 	}
 	return nil
 }
 
-// allRows is the unfiltered row list: the synthetic config rows, then
-// each group's header and its items.
+// allRows is the unfiltered row list: the config rows, then one row
+// per role group.
 func (p *engineDetailPage) allRows() []engineRow {
 	var rows []engineRow
 	rows = append(rows, engineRow{kind: rowTune, label: engineTuneRowLabel})
@@ -294,42 +247,31 @@ func (p *engineDetailPage) allRows() []engineRow {
 		rows = append(rows, engineRow{kind: rowEngineCfg, label: engineCfgRowLabel})
 	}
 	for _, g := range p.groups {
-		rows = append(rows, engineRow{kind: rowHeader, label: g.label, ep: g.endpoint})
-		for _, name := range g.roles {
-			rows = append(rows, engineRow{kind: rowRole, ep: g.endpoint, name: name})
-		}
+		rows = append(rows, engineRow{kind: rowGroup, label: g.label, ep: g.endpoint})
 	}
 	return rows
 }
 
-// visible returns the rows matching the filter. A group header stays
-// only while the group has a matching item.
+// visible returns the rows matching the filter. A group row matches on
+// its label or on any of its items, so filtering for a key name keeps
+// the group reachable.
 func (p *engineDetailPage) visible() []engineRow {
 	if p.filt.empty() {
 		return p.allRows()
 	}
-	match := map[string]bool{}
-	for _, g := range p.groups {
-		for _, name := range g.roles {
-			if p.filt.match(name) {
-				match[g.endpoint] = true
-			}
-		}
-	}
 	var out []engineRow
 	for _, r := range p.allRows() {
-		switch r.kind {
-		case rowHeader:
-			if match[r.ep] {
-				out = append(out, r)
-			}
-		case rowRole:
-			if p.filt.match(r.name) {
-				out = append(out, r)
-			}
-		default:
-			if p.filt.match(r.label) {
-				out = append(out, r)
+		if p.filt.match(r.label) {
+			out = append(out, r)
+			continue
+		}
+		if r.kind == rowGroup {
+			g := p.groupByEndpoint(r.ep)
+			for _, name := range g.roles {
+				if p.filt.match(name) {
+					out = append(out, r)
+					break
+				}
 			}
 		}
 	}
@@ -352,19 +294,8 @@ func (p *engineDetailPage) View() string {
 	rows := p.rowsVisible()
 	p.cur, p.off = window(p.cur, p.off, len(vis), rows)
 
-	total := 0
-	for _, g := range p.groups {
-		total += len(g.roles)
-	}
-	pos := 0
-	for i := 0; i <= p.cur && i < len(vis); i++ {
-		if vis[i].kind == rowRole {
-			pos++
-		}
-	}
-
 	var b strings.Builder
-	b.WriteString("  " + itemStyle.Render(p.m.Path) + "  " + dimStyle.Render(p.m.Type+" "+p.m.Accessor) + listInfo(pos, total, rows, p.noun()) + "\n")
+	b.WriteString("  " + itemStyle.Render(p.m.Path) + "  " + dimStyle.Render(p.m.Type+" "+p.m.Accessor) + "\n")
 	if fl := p.filt.view(); fl != "" {
 		b.WriteString(fl + "\n")
 	}
@@ -380,15 +311,6 @@ func (p *engineDetailPage) View() string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// noun names the counted items: the group's own noun for single-group
-// engines ("keys"), roles otherwise.
-func (p *engineDetailPage) noun() string {
-	if len(p.groups) == 1 {
-		return strings.ToLower(p.groups[0].label)
-	}
-	return "roles"
-}
-
 func (p *engineDetailPage) row(r engineRow, sel bool) string {
 	text := "  " + p.rowText(r)
 	if sel {
@@ -400,31 +322,31 @@ func (p *engineDetailPage) row(r engineRow, sel bool) string {
 func (p *engineDetailPage) rowText(r engineRow) string {
 	switch r.kind {
 	case rowTune, rowEngineCfg:
-		return typeStyle.Render(r.label)
-	case rowHeader:
-		return dimStyle.Render(p.headerText(r.ep))
+		return itemStyle.Render(r.label)
 	default:
-		return p.filt.highlight(r.name, itemStyle)
+		// group rows read as collections, the same color the KV
+		// browser uses for directories
+		return dirStyle.Render(r.label) + dimStyle.Render(p.groupNote(r.ep))
 	}
 }
 
-// headerText renders a group header with its loading or empty state,
-// so an empty group stays visible rather than silently disappearing.
-func (p *engineDetailPage) headerText(ep string) string {
+// groupNote is the dim suffix of a group row: its loading state or
+// item count.
+func (p *engineDetailPage) groupNote(ep string) string {
 	g := p.groupByEndpoint(ep)
 	switch {
 	case g.loading:
-		return g.label + " (loading ...)"
+		return "  ..."
 	case g.err != nil:
-		return g.label + " (error)"
+		return "  (error)"
 	case len(g.roles) == 0:
-		return g.label + " (none)"
+		return "  (none)"
 	}
-	return g.label
+	return fmt.Sprintf("  %d", len(g.roles))
 }
 
 // expansion renders the selected row's summary below the rule: the
-// tune pairs for the config row, the item's config otherwise.
+// tune pairs, the engine config document, or the group's item names.
 func (p *engineDetailPage) expansion(vis []engineRow) []string {
 	if p.cur >= len(vis) {
 		return nil
@@ -441,19 +363,30 @@ func (p *engineDetailPage) expansion(vis []engineRow) []string {
 		}
 		return truncateLines(lines, area)
 	case rowEngineCfg:
-		return truncateLines([]string{
-			titleStyle.Render(engineCfgRowLabel),
-			dimStyle.Render("the engine's own configuration; enter to read"),
-		}, area)
-	case rowHeader:
-		g := p.groupByEndpoint(r.ep)
-		lines := []string{titleStyle.Render(g.label)}
-		if len(g.roles) == 0 && !g.loading && g.err == nil {
-			lines = append(lines, dimStyle.Render("(none)"))
+		lines := []string{titleStyle.Render(engineCfgRowLabel)}
+		if p.ecfgLoading {
+			lines = append(lines, dimStyle.Render("loading ..."))
+		} else {
+			lines = append(lines, strings.Split(p.ecfgText, "\n")...)
 		}
 		return truncateLines(lines, area)
 	default:
-		return truncateLines(cfgExpansionLines(r.name, p.cfgs[r.ep+"/"+r.name]), area)
+		g := p.groupByEndpoint(r.ep)
+		lines := []string{titleStyle.Render(g.label)}
+		switch {
+		case g.loading:
+			lines = append(lines, dimStyle.Render("loading ..."))
+		case g.err != nil:
+			lines = append(lines, dimStyle.Render("error: "+g.err.Error()))
+		default:
+			for _, name := range g.roles {
+				lines = append(lines, "  "+itemStyle.Render(name))
+			}
+			if len(g.roles) == 0 {
+				lines = append(lines, dimStyle.Render("(none)"))
+			}
+		}
+		return truncateLines(lines, area)
 	}
 }
 
@@ -464,7 +397,7 @@ func (p *engineDetailPage) Header() string {
 func (p *engineDetailPage) Typing() bool { return p.filt.typing() }
 
 func (p *engineDetailPage) Loading() bool {
-	if p.cfgLoading {
+	if p.cfgLoading || p.ecfgLoading {
 		return true
 	}
 	for _, g := range p.groups {

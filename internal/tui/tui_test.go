@@ -228,7 +228,7 @@ func TestEndToEnd(t *testing.T) {
 	m = typeKeys(t, m, "esc")
 	m = typeKeys(t, m, "down", "enter") // into apps/
 	wantView(t, m, "api", "web")
-	m = typeKeys(t, m, "enter") // read secret apps/api
+	m = typeKeys(t, m, "down", "enter") // cursor skips the config row; read secret apps/api
 	wantView(t, m, "version: 2", "db_port: 5433", "notes: rotated port", "-- metadata --", "-- data --")
 	m = typeKeys(t, m, "esc", "esc", "esc", "esc") // back to home
 	wantView(t, m, "Secret Engines")
@@ -240,19 +240,26 @@ func TestEndToEnd(t *testing.T) {
 	wantView(t, m, "foo: bar", "baz: qux")
 	m = typeKeys(t, m, "esc", "esc", "esc")
 
-	// Transit keys
+	// Transit keys: the engine page lists config and groups; Keys has
+	// its own screen
 	m = openEngine(t, m, cl, "transit/")
-	wantView(t, m, "Config (tune)", "Keys", "aesguy", "eddy")
-	m = typeKeys(t, m, "down", "enter") // cursor skips the Keys header; read key aesguy
+	wantView(t, m, "Config (tune)", "Keys")
+	m = typeKeys(t, m, "down", "enter") // the Keys row opens its own screen
+	wantView(t, m, "aesguy", "eddy")
+	m = typeKeys(t, m, "down", "up") // move and return; the expansion fetches aesguy's config
+	wantView(t, m, "deletion_allowed:")
+	m = typeKeys(t, m, "enter") // the full key document
 	wantView(t, m, "aes256-gcm96")
-	m = typeKeys(t, m, "esc", "esc", "esc")
+	m = typeKeys(t, m, "esc", "esc", "esc", "esc") // doc -> keys -> engine -> engines -> home
 
 	// PKI roles
 	m = openEngine(t, m, cl, "pki/")
-	wantView(t, m, "Config (tune)", "Roles", "testrole")
-	m = typeKeys(t, m, "down", "enter") // cursor skips the Roles header
+	wantView(t, m, "Config (tune)", "Roles")
+	m = typeKeys(t, m, "down", "enter") // the Roles row opens its own screen
+	wantView(t, m, "testrole")
+	m = typeKeys(t, m, "enter")
 	wantView(t, m, "test.local")
-	m = typeKeys(t, m, "esc", "esc", "esc", "esc")
+	m = typeKeys(t, m, "esc", "esc", "esc", "esc", "esc")
 
 	// Policies: the union view merges every policy's paths
 	m = openMenu(t, m, "Policies")
@@ -385,24 +392,36 @@ func TestEndToEnd(t *testing.T) {
 	m = typeKeys(t, m, "enter")
 	wantView(t, m, "linked policies:", "[1] jwt-signer", "member_entity_ids:")
 
-	// AWS + GCP engines: synthetic config rows and grouped role lists
+	// AWS + GCP engines: config rows and per-group screens
 	setupCloudEngines(t, cl)
 
-	// AWS: one list with Config, Engine Config, Roles, Static Roles
+	// AWS: the engine page lists the tune config, the engine config
+	// (shown in the expansion when selected) and the role groups
 	m = openEngine(t, m, cl, "aws/")
-	wantView(t, m, "Config (tune)", "Engine Config", "Roles", "deploy", "s3reader", "Static Roles (none)")
-	m = typeKeys(t, m, "down", "enter") // the Engine Config row opens its doc
-	wantView(t, m, "aws/config/root", "aws/config/lease")
+	wantView(t, m, "Config (tune)", "Engine Config", "Roles", "Static Roles")
+	m = typeKeys(t, m, "down") // the Engine Config row's expansion shows the doc
+	wantView(t, m, "aws/config/root")
+	m = typeKeys(t, m, "enter") // the full document
+	wantView(t, m, "aws/config/lease")
 	m = typeKeys(t, m, "esc")
-	m = typeKeys(t, m, "down", "enter") // cursor skips the Roles header; role deploy
+	m = typeKeys(t, m, "down", "enter") // the Roles row opens its own screen
+	wantView(t, m, "deploy", "s3reader")
+	m = typeKeys(t, m, "enter") // role deploy
 	wantView(t, m, "credential_type: iam_user")
+	m = typeKeys(t, m, "esc")           // back to the Roles screen
+	m = typeKeys(t, m, "esc")           // back to the engine page
+	m = typeKeys(t, m, "down", "enter") // Static Roles (none without live AWS creds)
+	wantView(t, m, "no static roles found")
 	m = typeKeys(t, m, "esc", "esc")
 
-	// GCP: one list with Config, Engine Config and empty roleset groups
+	// GCP: the engine page lists config and empty roleset groups
 	m = openEngine(t, m, cl, "gcp/")
-	wantView(t, m, "Config (tune)", "Engine Config", "Rolesets (none)", "Static Accounts (none)", "Impersonated Accounts (none)")
+	wantView(t, m, "Config (tune)", "Engine Config", "Rolesets", "Static Accounts", "Impersonated Accounts")
 	m = typeKeys(t, m, "down", "enter") // the Engine Config row opens its doc
 	wantView(t, m, "gcp/config")
+	m = typeKeys(t, m, "esc")
+	m = typeKeys(t, m, "down", "enter") // Rolesets (none without live GCP creds)
+	wantView(t, m, "no rolesets found")
 }
 
 // setupCloudEngines enables the aws and gcp engines on the dev vault

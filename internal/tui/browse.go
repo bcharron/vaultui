@@ -82,6 +82,215 @@ func cfgExpansionLines(name string, cfg *roleCfg) []string {
 	return lines
 }
 
+// newRoleDetailPage builds the full-document page for one role-like
+// item, with its linked policies as cross-reference links.
+func newRoleDetailPage(cl *vaultapi.Client, mountPath, endpoint, label, name string) *detailPage {
+	dp := newDetailPage(
+		fmt.Sprintf("%s: %s", label, name),
+		func() (string, []pageLink, error) {
+			data, err := vault.ReadRole(cl, mountPath, endpoint, name)
+			if err != nil {
+				return "", nil, err
+			}
+			return formatMap(data), policyLinks(cl, extractPolicies(data)), nil
+		},
+	)
+	dp.linkTitle = "linked policies"
+	return dp
+}
+
+// roleListPage shows one role group's items (transit keys, PKI roles,
+// AWS static roles, ...) as a single list; the cursor's item expands
+// at the bottom with its config, fetched lazily. The engine page
+// pushes one per group.
+type roleListPage struct {
+	cl        *vaultapi.Client
+	mountPath string // full API prefix, e.g. "transit/"
+	endpoint  string // list endpoint, e.g. "keys"
+	label     string // group label, e.g. "Keys"
+	crumb     string // Header() breadcrumb
+
+	w, h int
+	filt filter
+
+	loading  bool
+	err      error
+	roles    []string
+	cfgs     map[string]*roleCfg
+	cur, off int
+}
+
+func newRoleListPage(cl *vaultapi.Client, mountPath, endpoint, label, crumb string) *roleListPage {
+	return &roleListPage{
+		cl:        cl,
+		mountPath: mountPath,
+		endpoint:  endpoint,
+		label:     label,
+		crumb:     crumb,
+		loading:   true,
+		cfgs:      map[string]*roleCfg{},
+	}
+}
+
+func (p *roleListPage) Init() tea.Cmd {
+	cl, mp, ep := p.cl, p.mountPath, p.endpoint
+	return func() tea.Msg {
+		roles, err := vault.ListRoles(cl, mp, ep)
+		return rolesLoadedMsg{path: mp, endpoint: ep, roles: roles, err: err}
+	}
+}
+
+func (p *roleListPage) Update(msg tea.Msg) (Page, tea.Cmd) {
+	switch msg := msg.(type) {
+	case resizeMsg:
+		p.w, p.h = msg.w, msg.h
+	case rolesLoadedMsg:
+		if msg.path != p.mountPath || msg.endpoint != p.endpoint {
+			return p, nil
+		}
+		p.loading = false
+		p.err = msg.err
+		p.roles = msg.roles
+		p.cur, p.off = 0, 0
+	case roleCfgMsg:
+		if msg.path != p.mountPath {
+			return p, nil
+		}
+		if c := p.cfgs[msg.key]; c != nil {
+			c.loading = false
+			c.err = msg.err
+			c.data = msg.data
+		}
+	case tea.KeyMsg:
+		return p.updateKeys(msg)
+	}
+	return p, nil
+}
+
+func (p *roleListPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
+	if p.filt.typing() {
+		if p.filt.update(msg) {
+			p.cur, p.off = 0, 0
+			return p, p.ensureCfg()
+		}
+	} else if msg.String() == "/" {
+		p.filt.active = true
+		return p, nil
+	}
+	vis := p.visible()
+	switch msg.String() {
+	case "up", "k":
+		if p.cur > 0 {
+			p.cur--
+		}
+	case "down", "j":
+		if p.cur < len(vis)-1 {
+			p.cur++
+		}
+	case "pgup":
+		p.cur = pageJump(p.cur, p.rowsVisible(), len(vis), false)
+	case "pgdown":
+		p.cur = pageJump(p.cur, p.rowsVisible(), len(vis), true)
+	case "r":
+		np := newRoleListPage(p.cl, p.mountPath, p.endpoint, p.label, p.crumb)
+		np.w, np.h = p.w, p.h
+		return np, np.Init()
+	case "enter":
+		if p.cur < len(vis) {
+			cl, mp, ep, label := p.cl, p.mountPath, p.endpoint, p.label
+			return p, Push(newRoleDetailPage(cl, mp, ep, label, vis[p.cur]))
+		}
+	}
+	return p, p.ensureCfg()
+}
+
+// visible returns the item names matching the filter.
+func (p *roleListPage) visible() []string {
+	if p.filt.empty() {
+		return p.roles
+	}
+	var out []string
+	for _, r := range p.roles {
+		if p.filt.match(r) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func (p *roleListPage) rowsVisible() int {
+	rows := max(p.h/2, 1)
+	if p.filt.view() != "" {
+		rows = max(rows-1, 1)
+	}
+	return rows
+}
+
+// ensureCfg prefetches the selected item's configuration for the
+// expansion pane; already-cached items are not re-fetched.
+func (p *roleListPage) ensureCfg() tea.Cmd {
+	vis := p.visible()
+	if p.cur >= len(vis) {
+		return nil
+	}
+	name := vis[p.cur]
+	key := p.endpoint + "/" + name
+	if _, ok := p.cfgs[key]; ok {
+		return nil
+	}
+	p.cfgs[key] = &roleCfg{loading: true}
+	return roleCfgFetch(p.cl, p.mountPath, p.endpoint, name)
+}
+
+func (p *roleListPage) View() string {
+	what := strings.ToLower(p.label)
+	if p.loading {
+		return loadingStyle.Render("loading " + what + " ...")
+	}
+	if p.err != nil {
+		return errStyle.Render("error listing " + what + ": " + p.err.Error())
+	}
+	if len(p.roles) == 0 {
+		return dimStyle.Render("no " + what + " found")
+	}
+	vis := p.visible()
+	if len(vis) == 0 {
+		return p.filt.view() + "\n\n" + dimStyle.Render("(no matches)")
+	}
+	rows := p.rowsVisible()
+	p.cur, p.off = window(p.cur, p.off, len(vis), rows)
+
+	var b strings.Builder
+	b.WriteString("  " + itemStyle.Render(p.mountPath) + "  " + dimStyle.Render(p.label) + listInfo(p.cur, len(vis), rows, what) + "\n")
+	if fl := p.filt.view(); fl != "" {
+		b.WriteString(fl + "\n")
+	}
+	b.WriteString("\n")
+	for i := p.off; i < min(p.off+rows, len(vis)); i++ {
+		if i == p.cur {
+			b.WriteString(selBar(p.w, "  "+vis[i]) + "\n")
+			continue
+		}
+		b.WriteString("  " + p.filt.highlight(vis[i], itemStyle) + "\n")
+	}
+
+	b.WriteString(hRule(p.w) + "\n")
+	for _, l := range truncateLines(cfgExpansionLines(vis[p.cur], p.cfgs[p.endpoint+"/"+vis[p.cur]]), max(p.h-p.h/2-4, 4)) {
+		b.WriteString(l + "\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func (p *roleListPage) Header() string { return p.crumb }
+
+func (p *roleListPage) Typing() bool { return p.filt.typing() }
+
+func (p *roleListPage) Loading() bool { return p.loading }
+
+func (p *roleListPage) Hints() string {
+	return "up/down select  enter open  / filter  r refresh  esc back  ctrl+l redraw  q quit"
+}
+
 // cfgValue renders one config value for the expansion pane: scalars
 // and plain lists inline; nested structures collapse to a placeholder
 // (the full document shows them properly).

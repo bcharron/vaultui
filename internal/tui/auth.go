@@ -271,10 +271,11 @@ func (p *authDetailPage) ensureCfg() tea.Cmd {
 	if r.role == "" {
 		return nil
 	}
-	if _, ok := p.cfgs[r.role]; ok {
+	key := p.roleEndpoint + "/" + r.role
+	if _, ok := p.cfgs[key]; ok {
 		return nil
 	}
-	p.cfgs[r.role] = &roleCfg{loading: true}
+	p.cfgs[key] = &roleCfg{loading: true}
 	return roleCfgFetch(p.cl, "auth/"+p.m.Path, p.roleEndpoint, r.role)
 }
 
@@ -295,17 +296,7 @@ func (p *authDetailPage) enter(r authRow) tea.Cmd {
 		))
 	}
 	name := r.role
-	dp := newDetailPage(
-		fmt.Sprintf("%s: %s", authRoleTabLabel(m.Type), name),
-		func() (string, []pageLink, error) {
-			data, err := vault.ReadRole(cl, "auth/"+m.Path, vault.AuthRoleListEndpoint(m.Type), name)
-			if err != nil {
-				return "", nil, err
-			}
-			return formatMap(data), policyLinks(cl, extractPolicies(data)), nil
-		},
-	)
-	dp.linkTitle = "linked policies"
+	dp := newRoleDetailPage(cl, "auth/"+m.Path, vault.AuthRoleListEndpoint(m.Type), authRoleTabLabel(m.Type), name)
 	return Push(dp)
 }
 
@@ -343,9 +334,9 @@ func (p *authDetailPage) View() string {
 func (p *authDetailPage) row(r authRow, sel bool) string {
 	if r.role == "" {
 		if sel {
-			return selBar(p.w, "  "+typeStyle.Render(engineTuneRowLabel))
+			return selBar(p.w, "  "+engineTuneRowLabel)
 		}
-		return "  " + typeStyle.Render(engineTuneRowLabel)
+		return "  " + itemStyle.Render(engineTuneRowLabel)
 	}
 	if sel {
 		return selBar(p.w, "  "+r.role)
@@ -370,7 +361,7 @@ func (p *authDetailPage) expansion(vis []authRow) []string {
 		}
 		return truncateLines(lines, area)
 	}
-	return truncateLines(cfgExpansionLines(r.role, p.cfgs[r.role]), area)
+	return truncateLines(cfgExpansionLines(r.role, p.cfgs[p.roleEndpoint+"/"+r.role]), area)
 }
 
 func (p *authDetailPage) Header() string {

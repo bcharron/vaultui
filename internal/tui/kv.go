@@ -57,7 +57,7 @@ func newKVPage(cl *vaultapi.Client, m vault.Mount, sub string) *kvPage {
 			if sel {
 				return selBar(p.w, "  "+engineTuneRowLabel)
 			}
-			return "  " + typeStyle.Render(engineTuneRowLabel)
+			return "  " + itemStyle.Render(engineTuneRowLabel)
 		}
 		if sel {
 			return selBar(p.w, "  "+r.e.Name)
