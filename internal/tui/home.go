@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbletea"
@@ -9,8 +10,9 @@ import (
 	"github.com/bcharron/vaultui/internal/vault"
 )
 
-// homeStatusMsg and homeHealthMsg carry the home screen's async status
-// fetches (sys/seal-status, sys/health).
+// homeStatusMsg, homeHealthMsg and homeTokenMsg carry the home screen's
+// async status fetches (sys/seal-status, sys/health,
+// auth/token/lookup-self).
 type homeStatusMsg struct {
 	seal map[string]interface{}
 	err  error
@@ -19,6 +21,11 @@ type homeStatusMsg struct {
 type homeHealthMsg struct {
 	health map[string]interface{}
 	err    error
+}
+
+type homeTokenMsg struct {
+	data map[string]interface{}
+	err  error
 }
 
 type homePage struct {
@@ -33,6 +40,7 @@ type homePage struct {
 	seal          map[string]interface{}
 	sealErr       error
 	health        map[string]interface{}
+	token         map[string]interface{}
 }
 
 func newHomePage(cl *vaultapi.Client) *homePage {
@@ -47,7 +55,7 @@ func newHomePage(cl *vaultapi.Client) *homePage {
 			"Server Status",
 			"Token Info",
 		},
-		statusPending: 2,
+		statusPending: 3,
 	}
 }
 
@@ -63,6 +71,10 @@ func (p *homePage) Init() tea.Cmd {
 		func() tea.Msg {
 			health, err := vault.Health(cl)
 			return homeHealthMsg{health: health, err: err}
+		},
+		func() tea.Msg {
+			data, err := vault.LookupSelf(cl)
+			return homeTokenMsg{data: data, err: err}
 		},
 	)
 }
@@ -81,6 +93,11 @@ func (p *homePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		p.statusPending--
 		if msg.err == nil {
 			p.health = msg.health
+		}
+	case homeTokenMsg:
+		p.statusPending--
+		if msg.err == nil {
+			p.token = msg.data
 		}
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -132,16 +149,43 @@ func (p *homePage) View() string {
 }
 
 // statusLine renders the one-line server summary shown above the menu:
-// the curated headline while data is arriving, a dim placeholder until
-// then, nothing when the server would not answer.
+// the curated headline plus the token's identity and remaining TTL,
+// a dim placeholder while data is arriving, nothing when the server
+// would not answer.
 func (p *homePage) statusLine() string {
 	if p.statusPending > 0 {
 		return dimStyle.Render("loading status ...")
 	}
+	var parts []string
 	if s := statusSummary(p.seal, p.health); s != "" {
-		return s
+		parts = append(parts, s)
 	}
-	return dimStyle.Render("status unavailable")
+	if s := tokenSummary(p.token); s != "" {
+		parts = append(parts, s)
+	}
+	if len(parts) == 0 {
+		return dimStyle.Render("status unavailable")
+	}
+	return strings.Join(parts, dimStyle.Render(" · "))
+}
+
+// tokenSummary renders the "token: root (no expiry)" segment of the
+// home status line from lookup-self data; empty when unavailable.
+func tokenSummary(data map[string]interface{}) string {
+	if data == nil {
+		return ""
+	}
+	name, _ := data["display_name"].(string)
+	if name == "" {
+		name = "token"
+	}
+	if ttl, ok := data["ttl"].(float64); ok {
+		if ttl > 0 {
+			return dimStyle.Render(fmt.Sprintf("token: %s (%s left)", name, humanDuration(int(ttl))))
+		}
+		return dimStyle.Render("token: " + name + " (no expiry)")
+	}
+	return dimStyle.Render("token: " + name)
 }
 
 func (p *homePage) Header() string { return "home" }

@@ -85,3 +85,19 @@ func TestStatusSummary(t *testing.T) {
 		t.Errorf("empty summary = %q, want \"\"", got)
 	}
 }
+
+func TestTokenSummary(t *testing.T) {
+	got := tokenSummary(map[string]interface{}{"display_name": "root", "ttl": float64(0)})
+	if !strings.Contains(got, "root") || !strings.Contains(got, "no expiry") {
+		t.Errorf("root token summary = %q", got)
+	}
+
+	got = tokenSummary(map[string]interface{}{"display_name": "app", "ttl": float64(1800)})
+	if !strings.Contains(got, "app") || !strings.Contains(got, "30m left") {
+		t.Errorf("ttl token summary = %q", got)
+	}
+
+	if got := tokenSummary(nil); got != "" {
+		t.Errorf("nil token summary = %q, want \"\"", got)
+	}
+}
