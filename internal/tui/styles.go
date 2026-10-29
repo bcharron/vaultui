@@ -8,7 +8,14 @@ import (
 )
 
 var (
-	topBarStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("230")).Background(lipgloss.Color("62")).Padding(0, 1)
+	topBarStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("230")).Background(lipgloss.Color("62")).Padding(0, 1)
+
+	// Header bar segment styles. Each carries the bar background
+	// explicitly: embedded ANSI resets would drop a wrapping
+	// background after the first styled segment.
+	topBarDim      = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Background(lipgloss.Color("62"))
+	topBarCrumb    = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Background(lipgloss.Color("62"))
+	topBarBg       = lipgloss.NewStyle().Background(lipgloss.Color("62"))
 	dimStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	breadStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	bottomStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))

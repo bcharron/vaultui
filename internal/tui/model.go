@@ -160,25 +160,27 @@ func (a App) dims() resizeMsg {
 
 // header renders the full-width top bar: app name and address on the
 // left with the cluster name and token expiry once they are known,
-// the current page's breadcrumb on the right.
+// the current page's breadcrumb on the right. Every segment carries
+// the bar background explicitly: a single wrapping style would lose
+// it at the first embedded segment's ANSI reset.
 func (a App) header() string {
 	w := a.w
 	if w <= 0 {
 		w = 80
 	}
-	left := "vaultui " + dimStyle.Render(a.addr)
+	left := topBarStyle.Render("vaultui") + topBarDim.Render(" "+a.addr)
 	if a.clusterName != "" {
-		left += "  " + dimStyle.Render("cluster: "+a.clusterName)
+		left += topBarDim.Render("  cluster: " + a.clusterName)
 	}
 	if a.tokenExpiry != "" {
-		left += "  " + dimStyle.Render("token: "+a.tokenExpiry)
+		left += topBarDim.Render("  token: " + a.tokenExpiry)
 	}
-	right := breadStyle.Render(a.top().Header())
-	pad := w - lipgloss.Width(left) - lipgloss.Width(right) - 2
+	right := topBarCrumb.Render(a.top().Header())
+	pad := w - lipgloss.Width(left) - lipgloss.Width(right) - 1
 	if pad < 1 {
-		return topBarStyle.Render(left + " " + right)
+		return left + topBarBg.Render(" ") + right
 	}
-	return topBarStyle.Render(left + strings.Repeat(" ", pad) + right)
+	return left + topBarBg.Render(strings.Repeat(" ", pad)) + right + topBarBg.Render(" ")
 }
 
 // loading reports whether the top page is waiting on data, via the
