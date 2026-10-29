@@ -88,22 +88,21 @@ func (p *authPage) View() string {
 	p.cur, p.off = window(p.cur, p.off, len(p.mounts), rows)
 
 	var b strings.Builder
-	b.WriteString(dimStyle.Render(fmt.Sprintf("  %-20s %-16s %s", "PATH", "TYPE", "DESCRIPTION")) + "\n\n")
+	b.WriteString(dimStyle.Render(fmt.Sprintf("  %-20s %-16s %s", "PATH", "TYPE", "DESCRIPTION")) + listInfo(p.cur, len(p.mounts), rows, "auth methods") + "\n\n")
 	for i := p.off; i < min(p.off+rows, len(p.mounts)); i++ {
 		m := p.mounts[i]
 		path := truncate(m.Path, 20)
 		typ := truncate(m.Type, 16)
 		desc := truncate(m.Description, max(p.w-40, 0))
 
-		marker := "  "
-		pStyle, tStyle := itemStyle, dimStyle
 		if i == p.cur {
-			marker = "> "
-			pStyle, tStyle = selStyle, typeStyle
+			row := fmt.Sprintf("  %-20s %-16s %s", path, typ, desc)
+			b.WriteString(selBar(p.w, row) + "\n")
+			continue
 		}
-		b.WriteString(fmt.Sprintf("%s%s %s %s\n", marker,
-			pStyle.Render(fmt.Sprintf("%-20s", path)),
-			tStyle.Render(fmt.Sprintf("%-16s", typ)),
+		b.WriteString(fmt.Sprintf("  %s %s %s\n",
+			itemStyle.Render(fmt.Sprintf("%-20s", path)),
+			typeStyle.Render(fmt.Sprintf("%-16s", typ)),
 			dimStyle.Render(desc)))
 	}
 	return strings.TrimRight(b.String(), "\n")
@@ -348,7 +347,11 @@ func (p *authDetailPage) tabBar() string {
 		}
 	}
 	info := fmt.Sprintf("%s %s", p.m.Type, p.m.Accessor)
-	return strings.Join(parts, " ") + "   " + dimStyle.Render(info)
+	s := strings.Join(parts, " ") + "   " + dimStyle.Render(info)
+	if p.tab == 1 {
+		s += listInfo(p.rcur, len(p.roles), max(p.h-3, 1), strings.ToLower(p.tabs()[1]))
+	}
+	return s
 }
 
 func (p *authDetailPage) viewConfig() string {
@@ -395,10 +398,14 @@ func (p *authDetailPage) viewRoles() string {
 			pol = dimStyle.Render("-> " + strings.Join(ps, ", "))
 		}
 		if i == p.rcur {
-			b.WriteString(selStyle.Render("> "+label) + pol + "\n")
-		} else {
-			b.WriteString(itemStyle.Render("  "+label) + pol + "\n")
+			row := "  " + strings.TrimRight(label, " ")
+			if ps := p.rolePol[name]; len(ps) > 0 {
+				row += " -> " + strings.Join(ps, ", ")
+			}
+			b.WriteString(selBar(p.w, row) + "\n")
+			continue
 		}
+		b.WriteString(itemStyle.Render("  "+label) + pol + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

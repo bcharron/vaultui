@@ -87,7 +87,7 @@ func (p *enginesPage) View() string {
 	p.cur, p.off = window(p.cur, p.off, len(p.mounts), rows)
 
 	var b strings.Builder
-	b.WriteString(dimStyle.Render(fmt.Sprintf("  %-20s %-16s %s", "PATH", "TYPE", "DESCRIPTION")) + "\n\n")
+	b.WriteString(dimStyle.Render(fmt.Sprintf("  %-20s %-16s %s", "PATH", "TYPE", "DESCRIPTION")) + listInfo(p.cur, len(p.mounts), rows, "mounts") + "\n\n")
 
 	for i := p.off; i < min(p.off+rows, len(p.mounts)); i++ {
 		m := p.mounts[i]
@@ -99,13 +99,12 @@ func (p *enginesPage) View() string {
 		typ := truncate(typeDesc, 16)
 		desc := truncate(m.Description, max(p.w-40, 0))
 
-		marker := "  "
-		pStyle, tStyle := itemStyle, dimStyle
 		if i == p.cur {
-			marker = "> "
-			pStyle, tStyle = selStyle, typeStyle
+			row := fmt.Sprintf("  %-20s %-16s %s", path, typ, desc)
+			b.WriteString(selBar(p.w, row) + "\n")
+			continue
 		}
-		b.WriteString(fmt.Sprintf("%s%s %s %s\n", marker, pStyle.Render(fmt.Sprintf("%-20s", path)), tStyle.Render(fmt.Sprintf("%-16s", typ)), dimStyle.Render(desc)))
+		b.WriteString(fmt.Sprintf("  %s %s %s\n", itemStyle.Render(fmt.Sprintf("%-20s", path)), typeStyle.Render(fmt.Sprintf("%-16s", typ)), dimStyle.Render(desc)))
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

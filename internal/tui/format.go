@@ -30,7 +30,11 @@ func writeMap(b *strings.Builder, m map[string]interface{}, indent string) {
 			writeMap(b, sub, indent+"  ")
 			continue
 		}
-		fmt.Fprintf(b, "%s%s %s\n", keyStyle.Render(indent+k), dimStyle.Render(":"), styledValue(v))
+		val := styledValue(v)
+		if f, ok := v.(float64); ok {
+			val += ttlSuffix(k, strconv.FormatFloat(f, 'f', -1, 64))
+		}
+		fmt.Fprintf(b, "%s%s %s\n", keyStyle.Render(indent+k), dimStyle.Render(":"), val)
 	}
 }
 
@@ -121,11 +125,59 @@ func secretDoc(data, meta map[string]interface{}) string {
 	return b.String()
 }
 
+// ttlSuffix returns the dimmed " (32d)" annotation appended to
+// ttl-like numeric values so raw seconds stay readable. Zero and
+// negative values get no annotation.
+func ttlSuffix(key, raw string) string {
+	if !isDurationKey(key) {
+		return ""
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || n <= 0 {
+		return ""
+	}
+	return dimStyle.Render(" (" + humanDuration(n) + ")")
+}
+
+// isDurationKey reports whether a map key holds a duration in seconds
+// (ttls, periods, lease durations).
+func isDurationKey(k string) bool {
+	lk := strings.ToLower(k)
+	return strings.Contains(lk, "ttl") || lk == "period" || lk == "lease_duration"
+}
+
+// humanDuration renders a number of seconds in the largest two units:
+// "32d", "1d4h", "1h30m", "45s", "0s".
+func humanDuration(sec int) string {
+	if sec <= 0 {
+		return "0s"
+	}
+	switch {
+	case sec >= 86400:
+		if h := (sec % 86400) / 3600; h > 0 {
+			return fmt.Sprintf("%dd%dh", sec/86400, h)
+		}
+		return fmt.Sprintf("%dd", sec/86400)
+	case sec >= 3600:
+		if m := (sec % 3600) / 60; m > 0 {
+			return fmt.Sprintf("%dh%dm", sec/3600, m)
+		}
+		return fmt.Sprintf("%dh", sec/3600)
+	case sec >= 60:
+		if s := sec % 60; s > 0 {
+			return fmt.Sprintf("%dm%ds", sec/60, s)
+		}
+		return fmt.Sprintf("%dm", sec/60)
+	default:
+		return fmt.Sprintf("%ds", sec)
+	}
+}
+
 // formatPairs renders key/value pairs (e.g. engine tune data).
 func formatPairs(pairs []vault.KV) string {
 	var b strings.Builder
 	for _, p := range pairs {
-		fmt.Fprintf(&b, "%s%s %s\n", keyStyle.Render(p.K), dimStyle.Render(":"), valStyle.Render(p.V))
+		fmt.Fprintf(&b, "%s%s %s\n", keyStyle.Render(p.K), dimStyle.Render(":"), valStyle.Render(p.V)+ttlSuffix(p.K, p.V))
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

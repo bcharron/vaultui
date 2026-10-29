@@ -150,11 +150,12 @@ func (p *kvVersionsPage) View() string {
 		b.WriteString(dimStyle.Render("no versions found"))
 		return b.String()
 	}
-	rows := p.h - 2
+	rows := p.h - 3
 	if rows < 1 {
 		rows = 1
 	}
 	p.cur, p.off = window(p.cur, p.off, len(p.versions), rows)
+	b.WriteString(listInfo(p.cur, len(p.versions), rows, "versions") + "\n\n")
 	for i := p.off; i < min(p.off+rows, len(p.versions)); i++ {
 		v := p.versions[i]
 		flags := ""
@@ -169,13 +170,21 @@ func (p *kvVersionsPage) View() string {
 		}
 		created := truncate(v.created, 19)
 		line := fmt.Sprintf("v%-4d %s", v.num, created)
-		marker := "  "
-		style := itemStyle
 		if i == p.cur {
-			marker = "> "
-			style = selStyle
+			row := "  " + line
+			if v.current {
+				row += " current"
+			}
+			if v.deleted {
+				row += " deleted"
+			}
+			if v.destroyed {
+				row += " destroyed"
+			}
+			b.WriteString(selBar(p.w, row) + "\n")
+			continue
 		}
-		b.WriteString(style.Render(marker+line) + flags + "\n")
+		b.WriteString(itemStyle.Render("  "+line) + flags + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

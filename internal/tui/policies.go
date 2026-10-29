@@ -95,12 +95,12 @@ func (p *policiesPage) View() string {
 	}
 	p.cur, p.off = window(p.cur, p.off, len(p.names), rows)
 	var b strings.Builder
-	b.WriteString(dimStyle.Render("  ACL POLICIES") + "\n\n")
+	b.WriteString("  " + dimStyle.Render("ACL POLICIES") + listInfo(p.cur, len(p.names), rows, "policies") + "\n\n")
 	for i := p.off; i < min(p.off+rows, len(p.names)); i++ {
 		if i == p.cur {
-			b.WriteString(selStyle.Render("> "+p.names[i]) + "\n")
+			b.WriteString(selBar(p.w, "  "+p.names[i]) + "\n")
 		} else {
-			b.WriteString(itemStyle.Render("  "+p.names[i]) + "\n")
+			b.WriteString("  " + itemStyle.Render(p.names[i]) + "\n")
 		}
 	}
 	return strings.TrimRight(b.String(), "\n")

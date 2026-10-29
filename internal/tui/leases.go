@@ -112,25 +112,23 @@ func (p *leasesPage) View() string {
 		b.WriteString(dimStyle.Render("(empty)"))
 		return b.String()
 	}
-	rows := p.h - 2
+	rows := p.h - 3
 	if rows < 1 {
 		rows = 1
 	}
 	p.cur, p.off = window(p.cur, p.off, len(p.entries), rows)
+	b.WriteString(listInfo(p.cur, len(p.entries), rows, "leases") + "\n\n")
 	for i := p.off; i < min(p.off+rows, len(p.entries)); i++ {
 		e := p.entries[i]
+		if i == p.cur {
+			b.WriteString(selBar(p.w, "  "+e.Name) + "\n")
+			continue
+		}
 		style := itemStyle
 		if e.IsDir {
 			style = dirStyle
 		}
-		if i == p.cur {
-			style = selStyle
-		}
-		marker := "  "
-		if i == p.cur {
-			marker = "> "
-		}
-		b.WriteString(style.Render(marker+e.Name) + "\n")
+		b.WriteString("  " + style.Render(e.Name) + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

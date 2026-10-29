@@ -162,6 +162,11 @@ func (p *identityPage) View() string {
 		}
 		b.WriteString(" ")
 	}
+	if p.tab == 0 {
+		b.WriteString(listInfo(p.ecur, len(p.entities), max(p.h-3, 1), "entities"))
+	} else {
+		b.WriteString(listInfo(p.gcur, len(p.groups), max(p.h-3, 1), "groups"))
+	}
 	b.WriteString("\n")
 	if p.tab == 0 {
 		b.WriteString(p.viewList(p.entities, p.entitiesLoading, p.entitiesErr, p.ecur, p.eoff, "entities"))
@@ -189,9 +194,9 @@ func (p *identityPage) viewList(names []string, loading bool, listErr error, cur
 	var b strings.Builder
 	for i := off; i < min(off+rows, len(names)); i++ {
 		if i == cur {
-			b.WriteString(selStyle.Render("> "+names[i]) + "\n")
+			b.WriteString(selBar(p.w, "  "+names[i]) + "\n")
 		} else {
-			b.WriteString(itemStyle.Render("  "+names[i]) + "\n")
+			b.WriteString("  " + itemStyle.Render(names[i]) + "\n")
 		}
 	}
 	return strings.TrimRight(b.String(), "\n")

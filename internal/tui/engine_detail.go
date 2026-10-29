@@ -430,7 +430,13 @@ func (p *engineDetailPage) tabBar() string {
 		}
 	}
 	info := fmt.Sprintf("%s %s", p.m.Type, p.m.Accessor)
-	return strings.Join(parts, " ") + "   " + dimStyle.Render(info)
+	s := strings.Join(parts, " ") + "   " + dimStyle.Render(info)
+	if p.isKV() && p.tab == 1 {
+		s += listInfo(p.ecur, len(p.entries), max(p.h-3, 1), "keys")
+	} else if g := p.groupTab(); g != nil {
+		s += listInfo(g.cur, len(g.roles), max(p.h-3, 1), strings.ToLower(g.label))
+	}
+	return s
 }
 
 func (p *engineDetailPage) viewConfig() string {
@@ -492,10 +498,14 @@ func (p *engineDetailPage) viewGroup() string {
 			ann = dimStyle.Render("-> " + a)
 		}
 		if i == g.cur {
-			b.WriteString(selStyle.Render("> "+label) + ann + "\n")
-		} else {
-			b.WriteString(itemStyle.Render("  "+label) + ann + "\n")
+			row := "  " + strings.TrimRight(label, " ")
+			if a := g.ann[name]; a != "" {
+				row += " -> " + a
+			}
+			b.WriteString(selBar(p.w, row) + "\n")
+			continue
 		}
+		b.WriteString(itemStyle.Render("  "+label) + ann + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -518,16 +528,15 @@ func (p *engineDetailPage) viewEntries() string {
 	var b strings.Builder
 	for i := p.eoff; i < min(p.eoff+rows, len(p.entries)); i++ {
 		e := p.entries[i]
-		marker := "  "
+		if i == p.ecur {
+			b.WriteString(selBar(p.w, "  "+e.Name) + "\n")
+			continue
+		}
 		style := itemStyle
 		if e.IsDir {
 			style = dirStyle
 		}
-		if i == p.ecur {
-			marker = "> "
-			style = selStyle
-		}
-		b.WriteString(style.Render(marker+e.Name) + "\n")
+		b.WriteString("  " + style.Render(e.Name) + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

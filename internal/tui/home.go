@@ -73,13 +73,11 @@ func (p *homePage) View() string {
 	b.WriteString(titleStyle.Render("HashiCorp Vault"))
 	b.WriteString("\n\n")
 	for i, it := range p.items {
-		marker := "  "
-		style := itemStyle
 		if i == p.cur {
-			marker = "> "
-			style = selStyle
+			b.WriteString(selBar(p.w, "  "+it) + "\n")
+		} else {
+			b.WriteString("  " + itemStyle.Render(it) + "\n")
 		}
-		b.WriteString(style.Render(marker+it) + "\n")
 	}
 	return b.String()
 }

@@ -129,7 +129,7 @@ func (p *tokenPage) View() string {
 func (p *tokenPage) Header() string { return "token info" }
 
 func (p *tokenPage) Hints() string {
-	return "type a path + enter to check capabilities  esc clear/back  q quit"
+	return "enter check capabilities  esc clear input  q quit"
 }
 
 func (p *tokenPage) Typing() bool { return true }

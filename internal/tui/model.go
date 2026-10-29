@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	vaultapi "github.com/hashicorp/vault/api"
@@ -113,9 +115,11 @@ func (a App) broadcast(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return a, tea.Batch(cmds...)
 }
 
-// dims returns the current content-area dimensions, falling back to a
-// sane default before the first WindowSizeMsg arrives (or if the
-// terminal never reports one, e.g. when output is not a TTY).
+// dims returns the current content-area dimensions: the terminal minus
+// the header and footer lines, minus the content box's border and
+// padding, falling back to a sane default before the first
+// WindowSizeMsg arrives (or if the terminal never reports one, e.g.
+// when output is not a TTY).
 func (a App) dims() resizeMsg {
 	w, h := a.w, a.h-2
 	if w <= 0 {
@@ -124,15 +128,29 @@ func (a App) dims() resizeMsg {
 	if h < 1 {
 		h = 22
 	}
-	return resizeMsg{w, h}
+	return resizeMsg{max(w-4, 1), max(h-2, 1)}
+}
+
+// header renders the full-width top bar: app name, address and masked
+// token on the left, the current page's breadcrumb on the right.
+func (a App) header() string {
+	w := a.w
+	if w <= 0 {
+		w = 80
+	}
+	left := "vaultui " + dimStyle.Render(a.addr) + "  " + dimStyle.Render(a.token)
+	right := breadStyle.Render(a.top().Header())
+	pad := w - lipgloss.Width(left) - lipgloss.Width(right) - 2
+	if pad < 1 {
+		return topBarStyle.Render(left + " " + right)
+	}
+	return topBarStyle.Render(left + strings.Repeat(" ", pad) + right)
 }
 
 func (a App) View() string {
-	header := topBarStyle.Render("vaultui") + " " +
-		dimStyle.Render(a.addr+"  "+a.token) +
-		breadStyle.Render("  "+a.top().Header())
-	content := lipgloss.NewStyle().Width(a.w).Height(max(a.h-2, 1)).Render(a.top().View())
-	footer := bottomStyle.Render(a.top().Hints())
+	header := a.header()
+	content := contentStyle.Height(max(a.h-4, 1)).Render(a.top().View())
+	footer := bottomStyle.Render(renderHints(a.top().Hints()))
 	return header + "\n" + content + "\n" + footer
 }
 
