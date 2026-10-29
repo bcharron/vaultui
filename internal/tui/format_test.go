@@ -1,6 +1,9 @@
 package tui
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestHumanDuration(t *testing.T) {
 	cases := []struct {
@@ -55,5 +58,30 @@ func TestIsDurationKey(t *testing.T) {
 		if isDurationKey(k) {
 			t.Errorf("isDurationKey(%q) = true, want false", k)
 		}
+	}
+}
+
+func TestStatusSummary(t *testing.T) {
+	seal := map[string]interface{}{"sealed": false, "version": "1.18.2", "storage_type": "inmem"}
+	health := map[string]interface{}{"standby": false, "cluster_name": "vault-dev"}
+	got := statusSummary(seal, health)
+	for _, want := range []string{"UNSEALED", "v1.18.2", "inmem", "active", "cluster: vault-dev"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("summary missing %q: %s", want, got)
+		}
+	}
+
+	got = statusSummary(map[string]interface{}{"sealed": true}, nil)
+	for _, want := range []string{"SEALED"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("sealed summary missing %q: %s", want, got)
+		}
+	}
+	if strings.Contains(got, "active") {
+		t.Errorf("sealed summary must not claim active: %s", got)
+	}
+
+	if got := statusSummary(nil, nil); got != "" {
+		t.Errorf("empty summary = %q, want \"\"", got)
 	}
 }
