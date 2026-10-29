@@ -22,6 +22,7 @@ type leasesPage struct {
 	cl      *vaultapi.Client
 	prefix  string
 	entries []vault.KVEntry
+	filt    filter
 	cur     int
 	off     int
 	loading bool
@@ -54,13 +55,23 @@ func (p *leasesPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		p.entries = msg.entries
 		p.cur, p.off = 0, 0
 	case tea.KeyMsg:
+		if p.filt.typing() {
+			if p.filt.update(msg) {
+				p.cur, p.off = 0, 0
+				return p, nil
+			}
+		} else if msg.String() == "/" {
+			p.filt.active = true
+			return p, nil
+		}
+		vis := p.visible()
 		switch msg.String() {
 		case "up", "k":
 			if p.cur > 0 {
 				p.cur--
 			}
 		case "down", "j":
-			if p.cur < len(p.entries)-1 {
+			if p.cur < len(vis)-1 {
 				p.cur++
 			}
 		case "enter":
@@ -74,11 +85,26 @@ func (p *leasesPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 	return p, nil
 }
 
+// visible returns the entries matching the filter.
+func (p *leasesPage) visible() []vault.KVEntry {
+	if p.filt.empty() {
+		return p.entries
+	}
+	var out []vault.KVEntry
+	for _, e := range p.entries {
+		if p.filt.match(e.Name) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 func (p *leasesPage) enter() (Page, tea.Cmd) {
-	if p.cur >= len(p.entries) {
+	vis := p.visible()
+	if p.cur >= len(vis) {
 		return p, nil
 	}
-	e := p.entries[p.cur]
+	e := vis[p.cur]
 	if e.IsDir {
 		return p, Push(newLeasesPage(p.cl, p.prefix+e.Name))
 	}
@@ -112,14 +138,27 @@ func (p *leasesPage) View() string {
 		b.WriteString(dimStyle.Render("(empty)"))
 		return b.String()
 	}
+	vis := p.visible()
+	if len(vis) == 0 {
+		b.WriteString(p.filt.view() + "\n\n")
+		b.WriteString(dimStyle.Render("(no matches)"))
+		return b.String()
+	}
 	rows := p.h - 3
+	if fl := p.filt.view(); fl != "" {
+		rows--
+	}
 	if rows < 1 {
 		rows = 1
 	}
-	p.cur, p.off = window(p.cur, p.off, len(p.entries), rows)
-	b.WriteString(listInfo(p.cur, len(p.entries), rows, "leases") + "\n\n")
-	for i := p.off; i < min(p.off+rows, len(p.entries)); i++ {
-		e := p.entries[i]
+	p.cur, p.off = window(p.cur, p.off, len(vis), rows)
+	b.WriteString(listInfo(p.cur, len(vis), rows, "leases") + "\n")
+	if fl := p.filt.view(); fl != "" {
+		b.WriteString(fl + "\n")
+	}
+	b.WriteString("\n")
+	for i := p.off; i < min(p.off+rows, len(vis)); i++ {
+		e := vis[i]
 		if i == p.cur {
 			b.WriteString(selBar(p.w, "  "+e.Name) + "\n")
 			continue
@@ -128,7 +167,7 @@ func (p *leasesPage) View() string {
 		if e.IsDir {
 			style = dirStyle
 		}
-		b.WriteString("  " + style.Render(e.Name) + "\n")
+		b.WriteString("  " + p.filt.highlight(e.Name, style) + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -138,7 +177,9 @@ func (p *leasesPage) Header() string {
 }
 
 func (p *leasesPage) Hints() string {
-	return "up/down select  enter open  r refresh  esc back  q quit"
+	return "up/down select  enter open  / filter  r refresh  esc back  q quit"
 }
 
-func (p *leasesPage) Typing() bool { return false }
+func (p *leasesPage) Typing() bool { return p.filt.typing() }
+
+func (p *leasesPage) Loading() bool { return p.loading }

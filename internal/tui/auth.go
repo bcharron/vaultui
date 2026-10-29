@@ -15,6 +15,7 @@ import (
 type authPage struct {
 	cl      *vaultapi.Client
 	mounts  []vault.Mount
+	filt    filter
 	cur     int
 	off     int
 	loading bool
@@ -49,18 +50,28 @@ func (p *authPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		p.mounts = msg.mounts
 		p.cur, p.off = 0, 0
 	case tea.KeyMsg:
+		if p.filt.typing() {
+			if p.filt.update(msg) {
+				p.cur, p.off = 0, 0
+				return p, nil
+			}
+		} else if msg.String() == "/" {
+			p.filt.active = true
+			return p, nil
+		}
+		vis := p.visible()
 		switch msg.String() {
 		case "up", "k":
 			if p.cur > 0 {
 				p.cur--
 			}
 		case "down", "j":
-			if p.cur < len(p.mounts)-1 {
+			if p.cur < len(vis)-1 {
 				p.cur++
 			}
 		case "enter":
-			if p.cur < len(p.mounts) {
-				return p, Push(newAuthDetailPage(p.cl, p.mounts[p.cur]))
+			if p.cur < len(vis) {
+				return p, Push(newAuthDetailPage(p.cl, vis[p.cur]))
 			}
 		case "r":
 			p.loading = true
@@ -69,6 +80,20 @@ func (p *authPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		}
 	}
 	return p, nil
+}
+
+// visible returns the auth mounts matching the filter.
+func (p *authPage) visible() []vault.Mount {
+	if p.filt.empty() {
+		return p.mounts
+	}
+	var out []vault.Mount
+	for _, m := range p.mounts {
+		if p.filt.match(m.Path) || p.filt.match(m.Type) {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 func (p *authPage) View() string {
@@ -81,16 +106,27 @@ func (p *authPage) View() string {
 	if len(p.mounts) == 0 {
 		return dimStyle.Render("no auth methods enabled")
 	}
+	vis := p.visible()
+	if len(vis) == 0 {
+		return p.filt.view() + "\n\n" + dimStyle.Render("(no matches)")
+	}
 	rows := p.h - 2
+	if fl := p.filt.view(); fl != "" {
+		rows--
+	}
 	if rows < 1 {
 		rows = 1
 	}
-	p.cur, p.off = window(p.cur, p.off, len(p.mounts), rows)
+	p.cur, p.off = window(p.cur, p.off, len(vis), rows)
 
 	var b strings.Builder
-	b.WriteString(dimStyle.Render(fmt.Sprintf("  %-20s %-16s %s", "PATH", "TYPE", "DESCRIPTION")) + listInfo(p.cur, len(p.mounts), rows, "auth methods") + "\n\n")
-	for i := p.off; i < min(p.off+rows, len(p.mounts)); i++ {
-		m := p.mounts[i]
+	b.WriteString(dimStyle.Render(fmt.Sprintf("  %-20s %-16s %s", "PATH", "TYPE", "DESCRIPTION")) + listInfo(p.cur, len(vis), rows, "auth methods") + "\n")
+	if fl := p.filt.view(); fl != "" {
+		b.WriteString(fl + "\n")
+	}
+	b.WriteString("\n")
+	for i := p.off; i < min(p.off+rows, len(vis)); i++ {
+		m := vis[i]
 		path := truncate(m.Path, 20)
 		typ := truncate(m.Type, 16)
 		desc := truncate(m.Description, max(p.w-40, 0))
@@ -101,8 +137,8 @@ func (p *authPage) View() string {
 			continue
 		}
 		b.WriteString(fmt.Sprintf("  %s %s %s\n",
-			itemStyle.Render(fmt.Sprintf("%-20s", path)),
-			typeStyle.Render(fmt.Sprintf("%-16s", typ)),
+			p.filt.highlight(fmt.Sprintf("%-20s", path), itemStyle),
+			p.filt.highlight(fmt.Sprintf("%-16s", typ), typeStyle),
 			dimStyle.Render(desc)))
 	}
 	return strings.TrimRight(b.String(), "\n")
@@ -110,10 +146,12 @@ func (p *authPage) View() string {
 
 func (p *authPage) Header() string { return "auth methods" }
 
-func (p *authPage) Typing() bool { return false }
+func (p *authPage) Typing() bool { return p.filt.typing() }
+
+func (p *authPage) Loading() bool { return p.loading }
 
 func (p *authPage) Hints() string {
-	return "up/down select  enter open auth method  r refresh  esc back  q quit"
+	return "up/down select  enter open auth method  / filter  r refresh  esc back  q quit"
 }
 
 // authRoleTabLabel names the second tab per auth type.
@@ -137,6 +175,7 @@ type authDetailPage struct {
 	m    vault.Mount
 	w, h int
 	tab  int // 0 config, 1 roles
+	filt filter
 
 	cfgText    string
 	cfgLoading bool
@@ -257,6 +296,16 @@ func (p *authDetailPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 }
 
 func (p *authDetailPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
+	if p.filt.typing() {
+		if p.filt.update(msg) {
+			p.rcur, p.roff = 0, 0
+			return p, nil
+		}
+	} else if msg.String() == "/" && p.tab == 1 {
+		p.filt.active = true
+		return p, nil
+	}
+	vis := p.visibleRoles()
 	switch msg.String() {
 	case "tab", "right", "l":
 		if p.tab < 1 {
@@ -288,7 +337,7 @@ func (p *authDetailPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 			p.vp, _ = p.vp.Update(msg)
 			return p, nil
 		}
-		if p.rcur < len(p.roles)-1 {
+		if p.rcur < len(vis)-1 {
 			p.rcur++
 		}
 		return p, nil
@@ -298,8 +347,8 @@ func (p *authDetailPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 		}
 		return p, nil
 	case "enter":
-		if p.tab == 1 && p.rcur < len(p.roles) {
-			name := p.roles[p.rcur]
+		if p.tab == 1 && p.rcur < len(vis) {
+			name := vis[p.rcur]
 			cl, m := p.cl, p.m
 			dp := newDetailPage(
 				fmt.Sprintf("%s: %s", p.tabs()[1], name),
@@ -367,6 +416,20 @@ func (p *authDetailPage) viewConfig() string {
 	return p.vp.View()
 }
 
+// visibleRoles returns the role names matching the filter.
+func (p *authDetailPage) visibleRoles() []string {
+	if p.filt.empty() {
+		return p.roles
+	}
+	var out []string
+	for _, r := range p.roles {
+		if p.filt.match(r) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 func (p *authDetailPage) viewRoles() string {
 	if p.rolesLoading {
 		return loadingStyle.Render("loading roles ...")
@@ -377,21 +440,31 @@ func (p *authDetailPage) viewRoles() string {
 	if len(p.roles) == 0 {
 		return dimStyle.Render("no roles found")
 	}
+	vis := p.visibleRoles()
+	if len(vis) == 0 {
+		return p.filt.view() + "\n\n" + dimStyle.Render("(no matches)")
+	}
 	rows := p.h - 2
+	if fl := p.filt.view(); fl != "" {
+		rows--
+	}
 	if rows < 1 {
 		rows = 1
 	}
-	p.rcur, p.roff = window(p.rcur, p.roff, len(p.roles), rows)
+	p.rcur, p.roff = window(p.rcur, p.roff, len(vis), rows)
 	padW := 0
-	for _, r := range p.roles {
+	for _, r := range vis {
 		if len(r) > padW {
 			padW = len(r)
 		}
 	}
 	padW += 2
 	var b strings.Builder
-	for i := p.roff; i < min(p.roff+rows, len(p.roles)); i++ {
-		name := p.roles[i]
+	if fl := p.filt.view(); fl != "" {
+		b.WriteString(fl + "\n\n")
+	}
+	for i := p.roff; i < min(p.roff+rows, len(vis)); i++ {
+		name := vis[i]
 		label := fmt.Sprintf("%-*s", padW, name)
 		pol := ""
 		if ps := p.rolePol[name]; len(ps) > 0 {
@@ -414,8 +487,15 @@ func (p *authDetailPage) Header() string {
 	return fmt.Sprintf("auth / %s", strings.TrimSuffix(p.m.Path, "/"))
 }
 
-func (p *authDetailPage) Typing() bool { return false }
+func (p *authDetailPage) Typing() bool { return p.filt.typing() }
+
+func (p *authDetailPage) Loading() bool {
+	if p.tab == 0 {
+		return p.cfgLoading
+	}
+	return p.rolesLoading
+}
 
 func (p *authDetailPage) Hints() string {
-	return "left/right tabs  up/down select  enter open  r refresh  esc back  q quit"
+	return "left/right tabs  up/down select  enter open  / filter roles  r refresh  esc back  q quit"
 }

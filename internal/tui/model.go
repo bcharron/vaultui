@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	vaultapi "github.com/hashicorp/vault/api"
@@ -36,13 +37,14 @@ type Page interface {
 }
 
 // App is the root model: it owns the page stack and the global chrome
-// (header with address, footer with key hints).
+// (header with address, footer with spinner and key hints).
 type App struct {
 	cl    *vaultapi.Client
 	addr  string
 	token string
 	ns    string
 	stack []Page
+	sp    spinner.Model
 	w, h  int
 }
 
@@ -54,12 +56,15 @@ func New(cl *vaultapi.Client) App {
 		token: maskToken(cl.Token()),
 		ns:    cl.Namespace(),
 		stack: []Page{newHomePage(cl)},
+		sp:    spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("117")))),
 	}
 }
 
 func (a App) top() Page { return a.stack[len(a.stack)-1] }
 
-func (a App) Init() tea.Cmd { return a.top().Init() }
+func (a App) Init() tea.Cmd {
+	return tea.Batch(a.top().Init(), a.sp.Tick)
+}
 
 func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -99,6 +104,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.stack = a.stack[:len(a.stack)-1]
 		}
 		return a, nil
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		a.sp, cmd = a.sp.Update(msg)
+		return a, cmd
 
 	default:
 		// Data messages go to every page in the stack so that pages
@@ -147,10 +157,20 @@ func (a App) header() string {
 	return topBarStyle.Render(left + strings.Repeat(" ", pad) + right)
 }
 
+// loading reports whether the top page is waiting on data, via the
+// optional Loading implementation.
+func (a App) loading() bool {
+	l, ok := a.top().(interface{ Loading() bool })
+	return ok && l.Loading()
+}
+
 func (a App) View() string {
 	header := a.header()
 	content := contentStyle.Height(max(a.h-4, 1)).Render(a.top().View())
 	footer := bottomStyle.Render(renderHints(a.top().Hints()))
+	if a.loading() {
+		footer = a.sp.View() + " " + footer
+	}
 	return header + "\n" + content + "\n" + footer
 }
 

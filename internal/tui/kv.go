@@ -24,6 +24,7 @@ type kvPage struct {
 	m       vault.Mount
 	sub     string // path under the mount, with trailing slash or ""
 	entries []vault.KVEntry
+	filt    filter
 	cur     int
 	off     int
 	loading bool
@@ -56,20 +57,30 @@ func (p *kvPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		p.entries = msg.entries
 		p.cur, p.off = 0, 0
 	case tea.KeyMsg:
+		if p.filt.typing() {
+			if p.filt.update(msg) {
+				p.cur, p.off = 0, 0
+				return p, nil
+			}
+		} else if msg.String() == "/" {
+			p.filt.active = true
+			return p, nil
+		}
+		vis := p.visible()
 		switch msg.String() {
 		case "up", "k":
 			if p.cur > 0 {
 				p.cur--
 			}
 		case "down", "j":
-			if p.cur < len(p.entries)-1 {
+			if p.cur < len(vis)-1 {
 				p.cur++
 			}
 		case "enter":
 			return p.enter()
 		case "v":
-			if p.cur < len(p.entries) && !p.entries[p.cur].IsDir {
-				return p, Push(newKVVersionsPage(p.cl, p.m, p.sub+p.entries[p.cur].Name))
+			if p.cur < len(vis) && !vis[p.cur].IsDir {
+				return p, Push(newKVVersionsPage(p.cl, p.m, p.sub+vis[p.cur].Name))
 			}
 		case "r":
 			p.loading = true
@@ -80,11 +91,26 @@ func (p *kvPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 	return p, nil
 }
 
+// visible returns the entries matching the filter.
+func (p *kvPage) visible() []vault.KVEntry {
+	if p.filt.empty() {
+		return p.entries
+	}
+	var out []vault.KVEntry
+	for _, e := range p.entries {
+		if p.filt.match(e.Name) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 func (p *kvPage) enter() (Page, tea.Cmd) {
-	if p.cur >= len(p.entries) {
+	vis := p.visible()
+	if p.cur >= len(vis) {
 		return p, nil
 	}
-	e := p.entries[p.cur]
+	e := vis[p.cur]
 	if e.IsDir {
 		return p, Push(newKVPage(p.cl, p.m, p.sub+e.Name))
 	}
@@ -118,14 +144,27 @@ func (p *kvPage) View() string {
 		b.WriteString(dimStyle.Render("(empty)"))
 		return b.String()
 	}
+	vis := p.visible()
+	if len(vis) == 0 {
+		b.WriteString(p.filt.view() + "\n\n")
+		b.WriteString(dimStyle.Render("(no matches)"))
+		return b.String()
+	}
 	rows := p.h - 3
+	if fl := p.filt.view(); fl != "" {
+		rows--
+	}
 	if rows < 1 {
 		rows = 1
 	}
-	p.cur, p.off = window(p.cur, p.off, len(p.entries), rows)
-	b.WriteString(listInfo(p.cur, len(p.entries), rows, "keys") + "\n\n")
-	for i := p.off; i < min(p.off+rows, len(p.entries)); i++ {
-		e := p.entries[i]
+	p.cur, p.off = window(p.cur, p.off, len(vis), rows)
+	b.WriteString(listInfo(p.cur, len(vis), rows, "keys") + "\n")
+	if fl := p.filt.view(); fl != "" {
+		b.WriteString(fl + "\n")
+	}
+	b.WriteString("\n")
+	for i := p.off; i < min(p.off+rows, len(vis)); i++ {
+		e := vis[i]
 		if i == p.cur {
 			b.WriteString(selBar(p.w, "  "+e.Name) + "\n")
 			continue
@@ -134,7 +173,7 @@ func (p *kvPage) View() string {
 		if e.IsDir {
 			style = dirStyle
 		}
-		b.WriteString("  " + style.Render(e.Name) + "\n")
+		b.WriteString("  " + p.filt.highlight(e.Name, style) + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -143,8 +182,10 @@ func (p *kvPage) Header() string {
 	return fmt.Sprintf("kv %s%s", p.m.Path, p.sub)
 }
 
-func (p *kvPage) Typing() bool { return false }
+func (p *kvPage) Typing() bool { return p.filt.typing() }
+
+func (p *kvPage) Loading() bool { return p.loading }
 
 func (p *kvPage) Hints() string {
-	return "up/down select  enter open  v versions  r refresh  esc back  q quit"
+	return "up/down select  enter open  v versions  / filter  r refresh  esc back  q quit"
 }

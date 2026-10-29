@@ -25,6 +25,7 @@ type identityPage struct {
 	cl   *vaultapi.Client
 	tab  int // 0 entities, 1 groups
 	w, h int
+	filt filter
 
 	entities        []string
 	ecur, eoff      int
@@ -76,6 +77,17 @@ func (p *identityPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 }
 
 func (p *identityPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
+	if p.filt.typing() {
+		if p.filt.update(msg) {
+			p.ecur, p.eoff = 0, 0
+			p.gcur, p.goff = 0, 0
+			return p, nil
+		}
+	} else if msg.String() == "/" {
+		p.filt.active = true
+		return p, nil
+	}
+	ents, grps := p.visibleEntities(), p.visibleGroups()
 	switch msg.String() {
 	case "tab", "right", "l":
 		if p.tab < 1 {
@@ -96,10 +108,10 @@ func (p *identityPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 		}
 		return p, nil
 	case "down", "j":
-		if p.tab == 0 && p.ecur < len(p.entities)-1 {
+		if p.tab == 0 && p.ecur < len(ents)-1 {
 			p.ecur++
 		}
-		if p.tab == 1 && p.gcur < len(p.groups)-1 {
+		if p.tab == 1 && p.gcur < len(grps)-1 {
 			p.gcur++
 		}
 		return p, nil
@@ -115,21 +127,51 @@ func (p *identityPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 	return p, nil
 }
 
+// visibleEntities returns the entity names matching the filter.
+func (p *identityPage) visibleEntities() []string {
+	if p.filt.empty() {
+		return p.entities
+	}
+	var out []string
+	for _, n := range p.entities {
+		if p.filt.match(n) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// visibleGroups returns the group names matching the filter.
+func (p *identityPage) visibleGroups() []string {
+	if p.filt.empty() {
+		return p.groups
+	}
+	var out []string
+	for _, n := range p.groups {
+		if p.filt.match(n) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
 func (p *identityPage) enter() (Page, tea.Cmd) {
 	cl := p.cl
 	if p.tab == 0 {
-		if p.ecur >= len(p.entities) {
+		vis := p.visibleEntities()
+		if p.ecur >= len(vis) {
 			return p, nil
 		}
-		name := p.entities[p.ecur]
+		name := vis[p.ecur]
 		return p, Push(identityDetail(cl, "entity: "+name, func() (map[string]interface{}, error) {
 			return vault.ReadEntity(cl, name)
 		}))
 	}
-	if p.gcur >= len(p.groups) {
+	vis := p.visibleGroups()
+	if p.gcur >= len(vis) {
 		return p, nil
 	}
-	name := p.groups[p.gcur]
+	name := vis[p.gcur]
 	return p, Push(identityDetail(cl, "group: "+name, func() (map[string]interface{}, error) {
 		return vault.ReadGroup(cl, name)
 	}))
@@ -169,9 +211,9 @@ func (p *identityPage) View() string {
 	}
 	b.WriteString("\n")
 	if p.tab == 0 {
-		b.WriteString(p.viewList(p.entities, p.entitiesLoading, p.entitiesErr, p.ecur, p.eoff, "entities"))
+		b.WriteString(p.viewList(p.visibleEntities(), p.entitiesLoading, p.entitiesErr, p.ecur, p.eoff, "entities"))
 	} else {
-		b.WriteString(p.viewList(p.groups, p.groupsLoading, p.groupsErr, p.gcur, p.goff, "groups"))
+		b.WriteString(p.viewList(p.visibleGroups(), p.groupsLoading, p.groupsErr, p.gcur, p.goff, "groups"))
 	}
 	return b.String()
 }
@@ -184,19 +226,28 @@ func (p *identityPage) viewList(names []string, loading bool, listErr error, cur
 		return errStyle.Render("error: " + listErr.Error())
 	}
 	if len(names) == 0 {
-		return dimStyle.Render("no " + what + " found")
+		if p.filt.empty() {
+			return dimStyle.Render("no " + what + " found")
+		}
+		return p.filt.view() + "\n\n" + dimStyle.Render("(no matches)")
 	}
 	rows := p.h - 2
+	if fl := p.filt.view(); fl != "" {
+		rows--
+	}
 	if rows < 1 {
 		rows = 1
 	}
 	cur, off = window(cur, off, len(names), rows)
 	var b strings.Builder
+	if fl := p.filt.view(); fl != "" {
+		b.WriteString(fl + "\n\n")
+	}
 	for i := off; i < min(off+rows, len(names)); i++ {
 		if i == cur {
 			b.WriteString(selBar(p.w, "  "+names[i]) + "\n")
 		} else {
-			b.WriteString("  " + itemStyle.Render(names[i]) + "\n")
+			b.WriteString("  " + p.filt.highlight(names[i], itemStyle) + "\n")
 		}
 	}
 	return strings.TrimRight(b.String(), "\n")
@@ -205,7 +256,14 @@ func (p *identityPage) viewList(names []string, loading bool, listErr error, cur
 func (p *identityPage) Header() string { return "identity" }
 
 func (p *identityPage) Hints() string {
-	return "left/right tabs  up/down select  enter open  r refresh  esc back  q quit"
+	return "left/right tabs  up/down select  enter open  / filter  r refresh  esc back  q quit"
 }
 
-func (p *identityPage) Typing() bool { return false }
+func (p *identityPage) Typing() bool { return p.filt.typing() }
+
+func (p *identityPage) Loading() bool {
+	if p.tab == 0 {
+		return p.entitiesLoading
+	}
+	return p.groupsLoading
+}

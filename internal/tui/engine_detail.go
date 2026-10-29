@@ -16,6 +16,7 @@ type engineDetailPage struct {
 	m    vault.Mount
 	w, h int
 	tab  int
+	filt filter
 
 	// Config tab (sys/mounts/{path}/tune)
 	cfgText    string
@@ -265,6 +266,25 @@ func (p *engineDetailPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 }
 
 func (p *engineDetailPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
+	if p.filt.typing() {
+		if p.filt.update(msg) {
+			g := p.groupTab()
+			if g != nil {
+				g.cur, g.off = 0, 0
+			}
+			p.ecur, p.eoff = 0, 0
+			return p, nil
+		}
+	} else if msg.String() == "/" && p.textTab() < 0 {
+		p.filt.active = true
+		return p, nil
+	}
+	g := p.groupTab()
+	gvis := []string(nil)
+	if g != nil {
+		gvis = p.visibleGroupRoles(g)
+	}
+	evis := p.visibleEntries()
 	tabs := p.tabs()
 	switch msg.String() {
 	case "tab", "right", "l":
@@ -294,7 +314,7 @@ func (p *engineDetailPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 				if p.ecur > 0 {
 					p.ecur--
 				}
-			} else if g := p.groupTab(); g != nil && g.cur > 0 {
+			} else if g != nil && g.cur > 0 {
 				g.cur--
 			}
 		}
@@ -307,10 +327,10 @@ func (p *engineDetailPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 			p.evp, _ = p.evp.Update(msg)
 		default:
 			if p.isKV() {
-				if p.ecur < len(p.entries)-1 {
+				if p.ecur < len(evis)-1 {
 					p.ecur++
 				}
-			} else if g := p.groupTab(); g != nil && g.cur < len(g.roles)-1 {
+			} else if g != nil && g.cur < len(gvis)-1 {
 				g.cur++
 			}
 		}
@@ -324,8 +344,8 @@ func (p *engineDetailPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 		}
 		return p, nil
 	case "v":
-		if p.isKV() && p.tab == 1 && p.ecur < len(p.entries) && !p.entries[p.ecur].IsDir {
-			return p, Push(newKVVersionsPage(p.cl, p.m, p.entries[p.ecur].Name))
+		if p.isKV() && p.tab == 1 && p.ecur < len(evis) && !evis[p.ecur].IsDir {
+			return p, Push(newKVVersionsPage(p.cl, p.m, evis[p.ecur].Name))
 		}
 		return p, nil
 	case "enter":
@@ -354,10 +374,11 @@ func (p *engineDetailPage) enter() (Page, tea.Cmd) {
 		if p.tab != 1 {
 			return p, nil
 		}
-		if p.ecur >= len(p.entries) {
+		vis := p.visibleEntries()
+		if p.ecur >= len(vis) {
 			return p, nil
 		}
-		e := p.entries[p.ecur]
+		e := vis[p.ecur]
 		if e.IsDir {
 			return p, Push(newKVPage(cl, m, e.Name))
 		}
@@ -374,10 +395,14 @@ func (p *engineDetailPage) enter() (Page, tea.Cmd) {
 	}
 	// Role group tab
 	g := p.groupTab()
-	if g == nil || g.cur >= len(g.roles) {
+	if g == nil {
 		return p, nil
 	}
-	name := g.roles[g.cur]
+	vis := p.visibleGroupRoles(g)
+	if g.cur >= len(vis) {
+		return p, nil
+	}
+	name := vis[g.cur]
 	endpoint, label := g.endpoint, g.label
 	dp := newDetailPage(
 		fmt.Sprintf("%s: %s", label, name),
@@ -462,6 +487,35 @@ func (p *engineDetailPage) viewEngineConfig() string {
 	return p.evp.View()
 }
 
+// visibleGroupRoles returns the role names of one group tab matching
+// the filter.
+func (p *engineDetailPage) visibleGroupRoles(g *roleGroupState) []string {
+	if p.filt.empty() {
+		return g.roles
+	}
+	var out []string
+	for _, r := range g.roles {
+		if p.filt.match(r) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// visibleEntries returns the Browse-tab entries matching the filter.
+func (p *engineDetailPage) visibleEntries() []vault.KVEntry {
+	if p.filt.empty() {
+		return p.entries
+	}
+	var out []vault.KVEntry
+	for _, e := range p.entries {
+		if p.filt.match(e.Name) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 func (p *engineDetailPage) viewGroup() string {
 	g := p.groupTab()
 	if g == nil {
@@ -477,21 +531,31 @@ func (p *engineDetailPage) viewGroup() string {
 	if len(g.roles) == 0 {
 		return dimStyle.Render("no " + what + " found")
 	}
+	vis := p.visibleGroupRoles(g)
+	if len(vis) == 0 {
+		return p.filt.view() + "\n\n" + dimStyle.Render("(no matches)")
+	}
 	rows := p.h - 2
+	if fl := p.filt.view(); fl != "" {
+		rows--
+	}
 	if rows < 1 {
 		rows = 1
 	}
-	g.cur, g.off = window(g.cur, g.off, len(g.roles), rows)
+	g.cur, g.off = window(g.cur, g.off, len(vis), rows)
 	padW := 0
-	for _, r := range g.roles {
+	for _, r := range vis {
 		if len(r) > padW {
 			padW = len(r)
 		}
 	}
 	padW += 2
 	var b strings.Builder
-	for i := g.off; i < min(g.off+rows, len(g.roles)); i++ {
-		name := g.roles[i]
+	if fl := p.filt.view(); fl != "" {
+		b.WriteString(fl + "\n\n")
+	}
+	for i := g.off; i < min(g.off+rows, len(vis)); i++ {
+		name := vis[i]
 		label := fmt.Sprintf("%-*s", padW, name)
 		ann := ""
 		if a := g.ann[name]; a != "" {
@@ -505,7 +569,7 @@ func (p *engineDetailPage) viewGroup() string {
 			b.WriteString(selBar(p.w, row) + "\n")
 			continue
 		}
-		b.WriteString(itemStyle.Render("  "+label) + ann + "\n")
+		b.WriteString("  " + p.filt.highlight(label, itemStyle) + ann + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -520,14 +584,24 @@ func (p *engineDetailPage) viewEntries() string {
 	if len(p.entries) == 0 {
 		return dimStyle.Render("no keys at this path (or no list permission)")
 	}
+	vis := p.visibleEntries()
+	if len(vis) == 0 {
+		return p.filt.view() + "\n\n" + dimStyle.Render("(no matches)")
+	}
 	rows := p.h - 2
+	if fl := p.filt.view(); fl != "" {
+		rows--
+	}
 	if rows < 1 {
 		rows = 1
 	}
-	p.ecur, p.eoff = window(p.ecur, p.eoff, len(p.entries), rows)
+	p.ecur, p.eoff = window(p.ecur, p.eoff, len(vis), rows)
 	var b strings.Builder
-	for i := p.eoff; i < min(p.eoff+rows, len(p.entries)); i++ {
-		e := p.entries[i]
+	if fl := p.filt.view(); fl != "" {
+		b.WriteString(fl + "\n\n")
+	}
+	for i := p.eoff; i < min(p.eoff+rows, len(vis)); i++ {
+		e := vis[i]
 		if i == p.ecur {
 			b.WriteString(selBar(p.w, "  "+e.Name) + "\n")
 			continue
@@ -536,7 +610,7 @@ func (p *engineDetailPage) viewEntries() string {
 		if e.IsDir {
 			style = dirStyle
 		}
-		b.WriteString("  " + style.Render(e.Name) + "\n")
+		b.WriteString("  " + p.filt.highlight(e.Name, style) + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -545,10 +619,23 @@ func (p *engineDetailPage) Header() string {
 	return fmt.Sprintf("engines / %s", strings.TrimSuffix(p.m.Path, "/"))
 }
 
-func (p *engineDetailPage) Typing() bool { return false }
+func (p *engineDetailPage) Typing() bool { return p.filt.typing() }
+
+func (p *engineDetailPage) Loading() bool {
+	switch {
+	case p.tab == 0:
+		return p.cfgLoading
+	case p.hasEngineConfig() && p.tab == 1:
+		return p.ecfgLoading
+	case p.isKV():
+		return p.entLoading
+	default:
+		return p.groupTab().loading
+	}
+}
 
 func (p *engineDetailPage) Hints() string {
-	return "left/right tabs  up/down select  enter open  v versions  r refresh  esc back  q quit"
+	return "left/right tabs  up/down select  enter open  v versions  / filter  r refresh  esc back  q quit"
 }
 
 // engineConfigDoc reads each engine config endpoint and renders them as

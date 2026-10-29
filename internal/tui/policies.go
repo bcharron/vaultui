@@ -12,6 +12,7 @@ import (
 type policiesPage struct {
 	cl      *vaultapi.Client
 	names   []string
+	filt    filter
 	cur     int
 	off     int
 	loading bool
@@ -57,18 +58,28 @@ func (p *policiesPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		p.names = msg.names
 		p.cur, p.off = 0, 0
 	case tea.KeyMsg:
+		if p.filt.typing() {
+			if p.filt.update(msg) {
+				p.cur, p.off = 0, 0
+				return p, nil
+			}
+		} else if msg.String() == "/" {
+			p.filt.active = true
+			return p, nil
+		}
+		vis := p.visible()
 		switch msg.String() {
 		case "up", "k":
 			if p.cur > 0 {
 				p.cur--
 			}
 		case "down", "j":
-			if p.cur < len(p.names)-1 {
+			if p.cur < len(vis)-1 {
 				p.cur++
 			}
 		case "enter":
-			if p.cur < len(p.names) {
-				return p, Push(newPolicyDetailPage(p.cl, p.names[p.cur]))
+			if p.cur < len(vis) {
+				return p, Push(newPolicyDetailPage(p.cl, vis[p.cur]))
 			}
 		case "r":
 			p.loading = true
@@ -77,6 +88,20 @@ func (p *policiesPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		}
 	}
 	return p, nil
+}
+
+// visible returns the policy names matching the filter.
+func (p *policiesPage) visible() []string {
+	if p.filt.empty() {
+		return p.names
+	}
+	var out []string
+	for _, n := range p.names {
+		if p.filt.match(n) {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 func (p *policiesPage) View() string {
@@ -89,18 +114,29 @@ func (p *policiesPage) View() string {
 	if len(p.names) == 0 {
 		return dimStyle.Render("no policies visible")
 	}
+	vis := p.visible()
+	if len(vis) == 0 {
+		return p.filt.view() + "\n\n" + dimStyle.Render("(no matches)")
+	}
 	rows := p.h - 2
+	if fl := p.filt.view(); fl != "" {
+		rows--
+	}
 	if rows < 1 {
 		rows = 1
 	}
-	p.cur, p.off = window(p.cur, p.off, len(p.names), rows)
+	p.cur, p.off = window(p.cur, p.off, len(vis), rows)
 	var b strings.Builder
-	b.WriteString("  " + dimStyle.Render("ACL POLICIES") + listInfo(p.cur, len(p.names), rows, "policies") + "\n\n")
-	for i := p.off; i < min(p.off+rows, len(p.names)); i++ {
+	b.WriteString("  " + dimStyle.Render("ACL POLICIES") + listInfo(p.cur, len(vis), rows, "policies") + "\n")
+	if fl := p.filt.view(); fl != "" {
+		b.WriteString(fl + "\n")
+	}
+	b.WriteString("\n")
+	for i := p.off; i < min(p.off+rows, len(vis)); i++ {
 		if i == p.cur {
-			b.WriteString(selBar(p.w, "  "+p.names[i]) + "\n")
+			b.WriteString(selBar(p.w, "  "+vis[i]) + "\n")
 		} else {
-			b.WriteString("  " + itemStyle.Render(p.names[i]) + "\n")
+			b.WriteString("  " + p.filt.highlight(vis[i], itemStyle) + "\n")
 		}
 	}
 	return strings.TrimRight(b.String(), "\n")
@@ -108,8 +144,10 @@ func (p *policiesPage) View() string {
 
 func (p *policiesPage) Header() string { return "policies" }
 
-func (p *policiesPage) Typing() bool { return false }
+func (p *policiesPage) Typing() bool { return p.filt.typing() }
+
+func (p *policiesPage) Loading() bool { return p.loading }
 
 func (p *policiesPage) Hints() string {
-	return "up/down select  enter view policy  r refresh  esc back  q quit"
+	return "up/down select  enter view policy  / filter  r refresh  esc back  q quit"
 }

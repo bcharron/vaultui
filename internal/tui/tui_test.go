@@ -261,6 +261,17 @@ func TestEndToEnd(t *testing.T) {
 	m = typeKeys(t, m, "esc", "esc")
 	wantView(t, m, "Secret Engines")
 
+	// Filter: "/" narrows the policy list live, esc clears it
+	m = openMenu(t, m, "ACL Policies")
+	m = typeKeys(t, m, "/", "j", "w", "t")
+	wantView(t, m, "jwt-signer", "jwt-reader")
+	if strings.Contains(m.View(), "team-apps") {
+		t.Errorf("filtered policy list still shows non-matching team-apps\n---\n%s\n---", m.View())
+	}
+	m = typeKeys(t, m, "esc")
+	wantView(t, m, "team-apps")
+	m = typeKeys(t, m, "esc", "esc")
+
 	// Reset the persistent home cursor, then auth methods: jwt roles
 	m = openMenu(t, m, "Auth Methods")
 	wantView(t, m, "jwt/", "token/")

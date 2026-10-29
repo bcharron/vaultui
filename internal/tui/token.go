@@ -133,3 +133,5 @@ func (p *tokenPage) Hints() string {
 }
 
 func (p *tokenPage) Typing() bool { return true }
+
+func (p *tokenPage) Loading() bool { return p.lookupLoading || p.capsLoading }

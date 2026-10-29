@@ -13,6 +13,7 @@ import (
 type enginesPage struct {
 	cl      *vaultapi.Client
 	mounts  []vault.Mount
+	filt    filter
 	cur     int
 	off     int
 	loading bool
@@ -47,18 +48,28 @@ func (p *enginesPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		p.mounts = msg.mounts
 		p.cur, p.off = 0, 0
 	case tea.KeyMsg:
+		if p.filt.typing() {
+			if p.filt.update(msg) {
+				p.cur, p.off = 0, 0
+				return p, nil
+			}
+		} else if msg.String() == "/" {
+			p.filt.active = true
+			return p, nil
+		}
+		vis := p.visible()
 		switch msg.String() {
 		case "up", "k":
 			if p.cur > 0 {
 				p.cur--
 			}
 		case "down", "j":
-			if p.cur < len(p.mounts)-1 {
+			if p.cur < len(vis)-1 {
 				p.cur++
 			}
 		case "enter":
-			if p.cur < len(p.mounts) {
-				return p, Push(newEngineDetailPage(p.cl, p.mounts[p.cur]))
+			if p.cur < len(vis) {
+				return p, Push(newEngineDetailPage(p.cl, vis[p.cur]))
 			}
 		case "r":
 			p.loading = true
@@ -79,18 +90,29 @@ func (p *enginesPage) View() string {
 	if len(p.mounts) == 0 {
 		return dimStyle.Render("no secret engines mounted")
 	}
+	vis := p.visible()
+	if len(vis) == 0 {
+		return p.filt.view() + "\n\n" + dimStyle.Render("(no matches)")
+	}
 
 	rows := p.h - 2
+	if fl := p.filt.view(); fl != "" {
+		rows--
+	}
 	if rows < 1 {
 		rows = 1
 	}
-	p.cur, p.off = window(p.cur, p.off, len(p.mounts), rows)
+	p.cur, p.off = window(p.cur, p.off, len(vis), rows)
 
 	var b strings.Builder
-	b.WriteString(dimStyle.Render(fmt.Sprintf("  %-20s %-16s %s", "PATH", "TYPE", "DESCRIPTION")) + listInfo(p.cur, len(p.mounts), rows, "mounts") + "\n\n")
+	b.WriteString(dimStyle.Render(fmt.Sprintf("  %-20s %-16s %s", "PATH", "TYPE", "DESCRIPTION")) + listInfo(p.cur, len(vis), rows, "mounts") + "\n")
+	if fl := p.filt.view(); fl != "" {
+		b.WriteString(fl + "\n")
+	}
+	b.WriteString("\n")
 
-	for i := p.off; i < min(p.off+rows, len(p.mounts)); i++ {
-		m := p.mounts[i]
+	for i := p.off; i < min(p.off+rows, len(vis)); i++ {
+		m := vis[i]
 		typeDesc := m.Type
 		if m.KVVersion > 0 {
 			typeDesc = fmt.Sprintf("%s (v%d)", m.Type, m.KVVersion)
@@ -104,17 +126,33 @@ func (p *enginesPage) View() string {
 			b.WriteString(selBar(p.w, row) + "\n")
 			continue
 		}
-		b.WriteString(fmt.Sprintf("  %s %s %s\n", itemStyle.Render(fmt.Sprintf("%-20s", path)), typeStyle.Render(fmt.Sprintf("%-16s", typ)), dimStyle.Render(desc)))
+		b.WriteString(fmt.Sprintf("  %s %s %s\n", p.filt.highlight(fmt.Sprintf("%-20s", path), itemStyle), p.filt.highlight(fmt.Sprintf("%-16s", typ), typeStyle), dimStyle.Render(desc)))
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
 
+// visible returns the mounts matching the filter.
+func (p *enginesPage) visible() []vault.Mount {
+	if p.filt.empty() {
+		return p.mounts
+	}
+	var out []vault.Mount
+	for _, m := range p.mounts {
+		if p.filt.match(m.Path) || p.filt.match(m.Type) {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
 func (p *enginesPage) Header() string { return "engines" }
 
-func (p *enginesPage) Typing() bool { return false }
+func (p *enginesPage) Typing() bool { return p.filt.typing() }
+
+func (p *enginesPage) Loading() bool { return p.loading }
 
 func (p *enginesPage) Hints() string {
-	return "up/down select  enter open engine  r refresh  esc back  q quit"
+	return "up/down select  enter open engine  / filter  r refresh  esc back  q quit"
 }
 
 func window(cur, off, n, rows int) (int, int) {
