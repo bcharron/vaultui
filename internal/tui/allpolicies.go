@@ -36,8 +36,8 @@ type allPathRow struct {
 // row per grant (path pattern + granting policy), with fixed
 // capability columns; paths granted by several policies appear once
 // per policy. The cursor's expansion shows the grant in detail.
-// enter opens the granting policy with the path preset as its
-// filter; / filters the list.
+// enter opens the granting policy in full context; / filters the
+// list.
 type allPoliciesPage struct {
 	cl       *vaultapi.Client
 	nameList []string // policy names to fetch, fixed at construction
@@ -132,9 +132,10 @@ func (p *allPoliciesPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			p.cur = pageJump(p.cur, max(p.h-3, 1), len(vis), true)
 		case "enter":
 			if p.cur < len(vis) {
-				np := newPolicyViewPage(p.cl, vis[p.cur].policy)
-				np.filt.q = vis[p.cur].block.path
-				return p, Push(np)
+				// open the granting policy in full context (all its
+				// paths), not filtered to the row's path: the row's
+				// own rule is already in the expansion
+				return p, Push(newPolicyViewPage(p.cl, vis[p.cur].policy))
 			}
 		}
 	}
