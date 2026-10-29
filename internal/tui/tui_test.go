@@ -404,9 +404,9 @@ func TestEndToEnd(t *testing.T) {
 	m = typeKeys(t, m, "enter") // the full document
 	wantView(t, m, "aws/config/lease")
 	m = typeKeys(t, m, "esc")
-	m = typeKeys(t, m, "down", "enter") // the Roles row opens its own screen
-	wantView(t, m, "deploy", "s3reader")
-	m = typeKeys(t, m, "enter") // role deploy
+	m = typeKeys(t, m, "down", "enter")                               // the Roles row opens its own screen
+	wantView(t, m, "deploy", "s3reader", "credential_type: iam_user") // the expansion fetched the highlighted role
+	m = typeKeys(t, m, "enter")                                       // role deploy
 	wantView(t, m, "credential_type: iam_user")
 	m = typeKeys(t, m, "esc")           // back to the Roles screen
 	m = typeKeys(t, m, "esc")           // back to the engine page

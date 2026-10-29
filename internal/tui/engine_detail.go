@@ -345,9 +345,7 @@ func (p *engineDetailPage) rowText(r engineRow) string {
 	case rowTune, rowEngineCfg:
 		return itemStyle.Render(r.label)
 	default:
-		// group rows read as collections, the same color the KV
-		// browser uses for directories
-		return dirStyle.Render(r.label) + dimStyle.Render(p.groupNote(r.ep))
+		return itemStyle.Render(r.label) + dimStyle.Render(p.groupNote(r.ep))
 	}
 }
 

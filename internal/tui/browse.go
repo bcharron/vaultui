@@ -152,6 +152,9 @@ func (p *roleListPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		p.err = msg.err
 		p.roles = msg.roles
 		p.cur, p.off = 0, 0
+		// The cursor lands on the first item with no keystroke to
+		// trigger the prefetch; fetch it so the expansion pane fills.
+		return p, p.ensureCfg()
 	case roleCfgMsg:
 		if msg.path != p.mountPath {
 			return p, nil
