@@ -54,6 +54,12 @@ func newEnginesPage(cl *vaultapi.Client) *enginesPage {
 			dimStyle.Render(desc))
 	}
 	p.onEnter = func(m vault.Mount) tea.Cmd {
+		// KV mounts are pure browsers: go straight into the KV
+		// browser (its first row opens the tune config) instead of
+		// a separate detail page.
+		if m.Type == "kv" {
+			return Push(newKVPage(p.cl, m, ""))
+		}
 		return Push(newEngineDetailPage(p.cl, m))
 	}
 	p.reload = p.Init

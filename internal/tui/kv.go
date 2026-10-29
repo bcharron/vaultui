@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	vaultapi "github.com/hashicorp/vault/api"
@@ -9,46 +10,82 @@ import (
 	"github.com/bcharron/vaultui/internal/vault"
 )
 
-// kvPage browses one directory level of a KV engine.
+// kvRow is one row of the KV browser's list: the synthetic
+// tune-config row on top, then the entries of the current directory.
+type kvRow struct {
+	config bool
+	e      vault.KVEntry
+}
+
+// kvPage browses one directory level of a KV engine, with the engine's
+// tune config as a synthetic first row.
 type kvPage struct {
 	cl      *vaultapi.Client
 	m       vault.Mount
 	sub     string // path under the mount, with trailing slash or ""
 	entries []vault.KVEntry
-	listPage[vault.KVEntry]
+	listPage[kvRow]
 }
 
 func newKVPage(cl *vaultapi.Client, m vault.Mount, sub string) *kvPage {
 	p := &kvPage{cl: cl, m: m, sub: sub}
 	p.loading = true
-	p.items = func() []vault.KVEntry { return p.entries }
-	p.visible = func() []vault.KVEntry {
-		if p.filt.empty() {
-			return p.entries
+	p.items = func() []kvRow {
+		rows := make([]kvRow, 0, len(p.entries))
+		for _, e := range p.entries {
+			rows = append(rows, kvRow{e: e})
 		}
-		var out []vault.KVEntry
+		return rows
+	}
+	p.visible = func() []kvRow {
+		var out []kvRow
+		if p.filt.match(engineTuneRowLabel) {
+			out = append(out, kvRow{config: true})
+		}
+		if p.filt.empty() {
+			return append(out, p.items()...)
+		}
 		for _, e := range p.entries {
 			if p.filt.match(e.Name) {
-				out = append(out, e)
+				out = append(out, kvRow{e: e})
 			}
 		}
 		return out
 	}
-	p.row = func(e vault.KVEntry, sel bool) string {
+	p.row = func(r kvRow, sel bool) string {
+		if r.config {
+			if sel {
+				return selBar(p.w, "  "+engineTuneRowLabel)
+			}
+			return "  " + typeStyle.Render(engineTuneRowLabel)
+		}
 		if sel {
-			return selBar(p.w, "  "+e.Name)
+			return selBar(p.w, "  "+r.e.Name)
 		}
 		style := itemStyle
-		if e.IsDir {
+		if r.e.IsDir {
 			style = dirStyle
 		}
-		return "  " + p.filt.highlight(e.Name, style)
+		return "  " + p.filt.highlight(r.e.Name, style)
 	}
-	p.onEnter = func(e vault.KVEntry) tea.Cmd {
-		if e.IsDir {
-			return Push(newKVPage(p.cl, p.m, p.sub+e.Name))
+	p.onEnter = func(r kvRow) tea.Cmd {
+		if r.config {
+			cl, m := p.cl, p.m
+			return Push(newDetailPage(
+				fmt.Sprintf("config: %s", strings.TrimSuffix(m.Path, "/")),
+				func() (string, []pageLink, error) {
+					kvs, err := vault.Tune(cl, m.Path)
+					if err != nil {
+						return "", nil, err
+					}
+					return formatPairs(kvs), nil, nil
+				},
+			))
 		}
-		cl, m, sub, name := p.cl, p.m, p.sub, e.Name
+		if r.e.IsDir {
+			return Push(newKVPage(p.cl, p.m, p.sub+r.e.Name))
+		}
+		cl, m, sub, name := p.cl, p.m, p.sub, r.e.Name
 		return Push(newDetailPage(
 			"secret: "+m.Path+sub+name,
 			func() (string, []pageLink, error) {
@@ -66,8 +103,8 @@ func newKVPage(cl *vaultapi.Client, m vault.Mount, sub string) *kvPage {
 			return nil, false
 		}
 		vis := p.visible()
-		if p.cur < len(vis) && !vis[p.cur].IsDir {
-			return Push(newKVVersionsPage(p.cl, p.m, p.sub+vis[p.cur].Name)), true
+		if p.cur < len(vis) && !vis[p.cur].config && !vis[p.cur].e.IsDir {
+			return Push(newKVVersionsPage(p.cl, p.m, p.sub+vis[p.cur].e.Name)), true
 		}
 		return nil, false
 	}
