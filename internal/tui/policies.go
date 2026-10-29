@@ -37,15 +37,10 @@ func (p *policiesPage) Init() tea.Cmd {
 	}
 }
 
-// newPolicyDetailPage builds the viewer for one policy's rules.
+// newPolicyDetailPage builds the structured viewer for one policy's
+// rules (path list with expansion; h shows the raw document).
 func newPolicyDetailPage(cl *vaultapi.Client, name string) Page {
-	return newDetailPage(
-		"policy: "+name,
-		func() (string, []pageLink, error) {
-			rules, err := vault.ReadPolicy(cl, name)
-			return rules, nil, err
-		},
-	)
+	return newPolicyViewPage(cl, name)
 }
 
 func (p *policiesPage) Update(msg tea.Msg) (Page, tea.Cmd) {

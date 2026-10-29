@@ -257,7 +257,12 @@ func TestEndToEnd(t *testing.T) {
 	m = openMenu(t, m, "ACL Policies")
 	wantView(t, m, "default", "root", "team-apps", "jwt-signer", "jwt-reader")
 	m = typeKeys(t, m, "down", "down", "down", "down", "enter") // team-apps
-	wantView(t, m, "capabilities", "secret/data/apps/*")
+	wantView(t, m, "secret/data/apps/*", "crudl", "capabilities: create, read, update, delete, list",
+		"apps team: full control of the apps tree")
+	m = typeKeys(t, m, "h") // raw document
+	wantView(t, m, "path \"secret/data/apps/*\"", "capabilities = [")
+	m = typeKeys(t, m, "h") // back to the structured view
+	wantView(t, m, "crudl")
 	m = typeKeys(t, m, "esc", "esc")
 	wantView(t, m, "Secret Engines")
 

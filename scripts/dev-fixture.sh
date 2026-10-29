@@ -25,6 +25,7 @@ vault secrets enable pki
 vault write pki/roles/testrole allowed_domains=test.local allow_subdomains=true max_ttl=72h
 
 cat > /tmp/team-apps.hcl <<'EOF'
+# apps team: full control of the apps tree
 path "secret/data/apps/*" {
   capabilities = ["create", "read", "update", "delete", "list"]
 }
