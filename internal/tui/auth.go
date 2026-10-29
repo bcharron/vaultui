@@ -13,14 +13,9 @@ import (
 
 // authPage lists the enabled auth methods.
 type authPage struct {
-	cl      *vaultapi.Client
-	mounts  []vault.Mount
-	filt    filter
-	cur     int
-	off     int
-	loading bool
-	err     error
-	w, h    int
+	cl     *vaultapi.Client
+	mounts []vault.Mount
+	listPage[vault.Mount]
 }
 
 type authLoadedMsg struct {
@@ -29,7 +24,44 @@ type authLoadedMsg struct {
 }
 
 func newAuthPage(cl *vaultapi.Client) *authPage {
-	return &authPage{cl: cl, loading: true}
+	p := &authPage{cl: cl}
+	p.loading = true
+	p.items = func() []vault.Mount { return p.mounts }
+	p.visible = func() []vault.Mount {
+		if p.filt.empty() {
+			return p.mounts
+		}
+		var out []vault.Mount
+		for _, m := range p.mounts {
+			if p.filt.match(m.Path) || p.filt.match(m.Type) {
+				out = append(out, m)
+			}
+		}
+		return out
+	}
+	p.row = func(m vault.Mount, sel bool) string {
+		path := truncate(m.Path, 20)
+		typ := truncate(m.Type, 16)
+		desc := truncate(m.Description, max(p.w-40, 0))
+		if sel {
+			return selBar(p.w, fmt.Sprintf("  %-20s %-16s %s", path, typ, desc))
+		}
+		return fmt.Sprintf("  %s %s %s",
+			p.filt.highlight(fmt.Sprintf("%-20s", path), itemStyle),
+			p.filt.highlight(fmt.Sprintf("%-16s", typ), typeStyle),
+			dimStyle.Render(desc))
+	}
+	p.onEnter = func(m vault.Mount) tea.Cmd {
+		return Push(newAuthDetailPage(p.cl, m))
+	}
+	p.reload = p.Init
+	p.title = dimStyle.Render(fmt.Sprintf("  %-20s %-16s %s", "PATH", "TYPE", "DESCRIPTION"))
+	p.noun = "auth methods"
+	p.headLines = 2
+	p.loadingText = "loading auth methods ..."
+	p.emptyText = "no auth methods enabled"
+	p.errPrefix = "error: "
+	return p
 }
 
 func (p *authPage) Init() tea.Cmd {
@@ -43,116 +75,17 @@ func (p *authPage) Init() tea.Cmd {
 func (p *authPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 	switch msg := msg.(type) {
 	case resizeMsg:
-		p.w, p.h = msg.w, msg.h
+		p.resize(msg.w, msg.h)
 	case authLoadedMsg:
-		p.loading = false
-		p.err = msg.err
 		p.mounts = msg.mounts
-		p.cur, p.off = 0, 0
+		p.loaded(msg.err)
 	case tea.KeyMsg:
-		if p.filt.typing() {
-			if p.filt.update(msg) {
-				p.cur, p.off = 0, 0
-				return p, nil
-			}
-		} else if msg.String() == "/" {
-			p.filt.active = true
-			return p, nil
-		}
-		vis := p.visible()
-		switch msg.String() {
-		case "up", "k":
-			if p.cur > 0 {
-				p.cur--
-			}
-		case "down", "j":
-			if p.cur < len(vis)-1 {
-				p.cur++
-			}
-		case "pgup":
-			p.cur = pageJump(p.cur, max(p.h-3, 1), len(vis), false)
-		case "pgdown":
-			p.cur = pageJump(p.cur, max(p.h-3, 1), len(vis), true)
-		case "enter":
-			if p.cur < len(vis) {
-				return p, Push(newAuthDetailPage(p.cl, vis[p.cur]))
-			}
-		case "r":
-			p.loading = true
-			p.err = nil
-			return p, p.Init()
-		}
+		return p, p.updateKeys(msg)
 	}
 	return p, nil
 }
 
-// visible returns the auth mounts matching the filter.
-func (p *authPage) visible() []vault.Mount {
-	if p.filt.empty() {
-		return p.mounts
-	}
-	var out []vault.Mount
-	for _, m := range p.mounts {
-		if p.filt.match(m.Path) || p.filt.match(m.Type) {
-			out = append(out, m)
-		}
-	}
-	return out
-}
-
-func (p *authPage) View() string {
-	if p.loading {
-		return loadingStyle.Render("loading auth methods ...")
-	}
-	if p.err != nil {
-		return errStyle.Render("error: " + p.err.Error())
-	}
-	if len(p.mounts) == 0 {
-		return dimStyle.Render("no auth methods enabled")
-	}
-	vis := p.visible()
-	if len(vis) == 0 {
-		return p.filt.view() + "\n\n" + dimStyle.Render("(no matches)")
-	}
-	rows := p.h - 2
-	if fl := p.filt.view(); fl != "" {
-		rows--
-	}
-	if rows < 1 {
-		rows = 1
-	}
-	p.cur, p.off = window(p.cur, p.off, len(vis), rows)
-
-	var b strings.Builder
-	b.WriteString(dimStyle.Render(fmt.Sprintf("  %-20s %-16s %s", "PATH", "TYPE", "DESCRIPTION")) + listInfo(p.cur, len(vis), rows, "auth methods") + "\n")
-	if fl := p.filt.view(); fl != "" {
-		b.WriteString(fl + "\n")
-	}
-	b.WriteString("\n")
-	for i := p.off; i < min(p.off+rows, len(vis)); i++ {
-		m := vis[i]
-		path := truncate(m.Path, 20)
-		typ := truncate(m.Type, 16)
-		desc := truncate(m.Description, max(p.w-40, 0))
-
-		if i == p.cur {
-			row := fmt.Sprintf("  %-20s %-16s %s", path, typ, desc)
-			b.WriteString(selBar(p.w, row) + "\n")
-			continue
-		}
-		b.WriteString(fmt.Sprintf("  %s %s %s\n",
-			p.filt.highlight(fmt.Sprintf("%-20s", path), itemStyle),
-			p.filt.highlight(fmt.Sprintf("%-16s", typ), typeStyle),
-			dimStyle.Render(desc)))
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
 func (p *authPage) Header() string { return "auth methods" }
-
-func (p *authPage) Typing() bool { return p.filt.typing() }
-
-func (p *authPage) Loading() bool { return p.loading }
 
 func (p *authPage) Hints() string {
 	return "up/down select  enter open auth method  / filter  r refresh  esc back  ctrl+l redraw  q quit"

@@ -19,7 +19,6 @@ var (
 	topBarCrumb    = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Background(lipgloss.Color("62"))
 	topBarBg       = lipgloss.NewStyle().Background(lipgloss.Color("62"))
 	dimStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	breadStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	bottomStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	itemStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	selStyle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("213"))

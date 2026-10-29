@@ -117,16 +117,16 @@ func (p *identityPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 		return p, nil
 	case "pgup":
 		if p.tab == 0 {
-			p.ecur = pageJump(p.ecur, max(p.h-3, 1), len(ents), false)
+			p.ecur = pageJump(p.ecur, p.listRows(), len(ents), false)
 		} else {
-			p.gcur = pageJump(p.gcur, max(p.h-3, 1), len(grps), false)
+			p.gcur = pageJump(p.gcur, p.listRows(), len(grps), false)
 		}
 		return p, nil
 	case "pgdown":
 		if p.tab == 0 {
-			p.ecur = pageJump(p.ecur, max(p.h-3, 1), len(ents), true)
+			p.ecur = pageJump(p.ecur, p.listRows(), len(ents), true)
 		} else {
-			p.gcur = pageJump(p.gcur, max(p.h-3, 1), len(grps), true)
+			p.gcur = pageJump(p.gcur, p.listRows(), len(grps), true)
 		}
 		return p, nil
 	case "enter":
@@ -208,6 +208,15 @@ func identityDetail(cl *vaultapi.Client, title string, read func() (map[string]i
 	return dp
 }
 
+// listRows is the number of list rows that fit under the tab bar.
+func (p *identityPage) listRows() int {
+	rows := p.h - 2
+	if p.filt.view() != "" {
+		rows--
+	}
+	return max(rows, 1)
+}
+
 func (p *identityPage) View() string {
 	var b strings.Builder
 	for i, t := range []string{"Entities", "Groups"} {
@@ -219,9 +228,9 @@ func (p *identityPage) View() string {
 		b.WriteString(" ")
 	}
 	if p.tab == 0 {
-		b.WriteString(listInfo(p.ecur, len(p.entities), max(p.h-3, 1), "entities"))
+		b.WriteString(listInfo(p.ecur, len(p.entities), p.listRows(), "entities"))
 	} else {
-		b.WriteString(listInfo(p.gcur, len(p.groups), max(p.h-3, 1), "groups"))
+		b.WriteString(listInfo(p.gcur, len(p.groups), p.listRows(), "groups"))
 	}
 	b.WriteString("\n")
 	if p.tab == 0 {
@@ -245,13 +254,7 @@ func (p *identityPage) viewList(names []string, loading bool, listErr error, cur
 		}
 		return p.filt.view() + "\n\n" + dimStyle.Render("(no matches)")
 	}
-	rows := p.h - 2
-	if fl := p.filt.view(); fl != "" {
-		rows--
-	}
-	if rows < 1 {
-		rows = 1
-	}
+	rows := p.listRows()
 	cur, off = window(cur, off, len(names), rows)
 	var b strings.Builder
 	if fl := p.filt.view(); fl != "" {

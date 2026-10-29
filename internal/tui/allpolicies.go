@@ -126,9 +126,9 @@ func (p *allPoliciesPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 				p.cur++
 			}
 		case "pgup":
-			p.cur = pageJump(p.cur, max(p.h-3, 1), len(vis), false)
+			p.cur = pageJump(p.cur, p.rowsVisible(), len(vis), false)
 		case "pgdown":
-			p.cur = pageJump(p.cur, max(p.h-3, 1), len(vis), true)
+			p.cur = pageJump(p.cur, p.rowsVisible(), len(vis), true)
 		case "enter":
 			if p.cur < len(vis) {
 				// the grant's raw HCL with its lead comment, the
@@ -169,6 +169,16 @@ func flattenAllPaths(entries []policyEntry) ([]allPathRow, []string) {
 	return rows, policyCols(blocks)
 }
 
+// rowsVisible is the number of list rows the view shows: the top half
+// of the content area, less the filter line.
+func (p *allPoliciesPage) rowsVisible() int {
+	rows := max(p.h/2, 1)
+	if p.filt.view() != "" {
+		rows = max(rows-1, 1)
+	}
+	return rows
+}
+
 func (p *allPoliciesPage) View() string {
 	if p.loading {
 		return loadingStyle.Render("loading all policies ...")
@@ -183,10 +193,7 @@ func (p *allPoliciesPage) View() string {
 		}
 		return p.filt.view() + "\n\n" + dimStyle.Render("(no matches)")
 	}
-	rows := max(p.h/2, 1)
-	if p.filt.view() != "" {
-		rows = max(rows-1, 1)
-	}
+	rows := p.rowsVisible()
 	p.cur, p.off = window(p.cur, p.off, len(vis), rows)
 
 	longest := 0

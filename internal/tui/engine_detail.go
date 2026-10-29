@@ -59,13 +59,6 @@ type tuneLoadedMsg struct {
 	err  error
 }
 
-type rolesLoadedMsg struct {
-	path     string
-	endpoint string
-	roles    []string
-	err      error
-}
-
 type roleAnnMsg struct {
 	path     string
 	endpoint string
@@ -344,9 +337,9 @@ func (p *engineDetailPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 		default:
 			down := msg.String() == "pgdown"
 			if p.isKV() {
-				p.ecur = pageJump(p.ecur, max(p.h-3, 1), len(evis), down)
+				p.ecur = pageJump(p.ecur, p.listRows(), len(evis), down)
 			} else if g != nil {
-				g.cur = pageJump(g.cur, max(p.h-3, 1), len(gvis), down)
+				g.cur = pageJump(g.cur, p.listRows(), len(gvis), down)
 			}
 		}
 		return p, nil
@@ -382,6 +375,15 @@ func (p *engineDetailPage) textTab() int {
 }
 
 func (p *engineDetailPage) isKV() bool { return p.m.Type == "kv" }
+
+// listRows is the number of list rows that fit under the tab bar.
+func (p *engineDetailPage) listRows() int {
+	rows := p.h - 2
+	if p.filt.view() != "" {
+		rows--
+	}
+	return max(rows, 1)
+}
 
 func (p *engineDetailPage) enter() (Page, tea.Cmd) {
 	cl, m := p.cl, p.m
@@ -472,9 +474,9 @@ func (p *engineDetailPage) tabBar() string {
 	info := fmt.Sprintf("%s %s", p.m.Type, p.m.Accessor)
 	s := strings.Join(parts, " ") + "   " + dimStyle.Render(info)
 	if p.isKV() && p.tab == 1 {
-		s += listInfo(p.ecur, len(p.entries), max(p.h-3, 1), "keys")
+		s += listInfo(p.ecur, len(p.entries), p.listRows(), "keys")
 	} else if g := p.groupTab(); g != nil {
-		s += listInfo(g.cur, len(g.roles), max(p.h-3, 1), strings.ToLower(g.label))
+		s += listInfo(g.cur, len(g.roles), p.listRows(), strings.ToLower(g.label))
 	}
 	return s
 }
@@ -550,13 +552,7 @@ func (p *engineDetailPage) viewGroup() string {
 	if len(vis) == 0 {
 		return p.filt.view() + "\n\n" + dimStyle.Render("(no matches)")
 	}
-	rows := p.h - 2
-	if fl := p.filt.view(); fl != "" {
-		rows--
-	}
-	if rows < 1 {
-		rows = 1
-	}
+	rows := p.listRows()
 	g.cur, g.off = window(g.cur, g.off, len(vis), rows)
 	padW := 0
 	for _, r := range vis {
@@ -603,13 +599,7 @@ func (p *engineDetailPage) viewEntries() string {
 	if len(vis) == 0 {
 		return p.filt.view() + "\n\n" + dimStyle.Render("(no matches)")
 	}
-	rows := p.h - 2
-	if fl := p.filt.view(); fl != "" {
-		rows--
-	}
-	if rows < 1 {
-		rows = 1
-	}
+	rows := p.listRows()
 	p.ecur, p.eoff = window(p.ecur, p.eoff, len(vis), rows)
 	var b strings.Builder
 	if fl := p.filt.view(); fl != "" {
