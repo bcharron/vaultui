@@ -115,7 +115,7 @@ func TestSortCaps(t *testing.T) {
 	}
 }
 
-func TestMergeAllPaths(t *testing.T) {
+func TestFlattenAllPaths(t *testing.T) {
 	entries := []policyEntry{
 		{
 			name: "team-apps",
@@ -131,22 +131,23 @@ func TestMergeAllPaths(t *testing.T) {
 			},
 		},
 	}
-	paths, cols := mergeAllPaths(entries)
-	if len(paths) != 2 {
-		t.Fatalf("got %d paths, want 2", len(paths))
+	rows, cols := flattenAllPaths(entries)
+	// one row per grant, sorted by path then policy: the shared path
+	// appears once per granting policy
+	want := []struct{ path, policy string }{
+		{"secret/data/apps/*", "jwt-reader"},
+		{"secret/data/apps/*", "team-apps"},
+		{"transit/verify/jwt-signer", "jwt-reader"},
 	}
-	if paths[0].path != "secret/data/apps/*" || paths[1].path != "transit/verify/jwt-signer" {
-		t.Errorf("paths not sorted: %+v", paths)
+	if len(rows) != len(want) {
+		t.Fatalf("got %d rows, want %d", len(rows), len(want))
 	}
-	// shared path carries both grants, sorted by policy name
-	g0 := paths[0].grants
-	if len(g0) != 2 || g0[0].policy != "jwt-reader" || g0[1].policy != "team-apps" {
-		t.Errorf("grants = %+v", g0)
+	for i, w := range want {
+		if rows[i].block.path != w.path || rows[i].policy != w.policy {
+			t.Errorf("row %d = (%s, %s), want (%s, %s)", i, rows[i].block.path, rows[i].policy, w.path, w.policy)
+		}
 	}
-	if got := capColumns(paths[0].unionCaps(), cols); got != "c r u d l" {
-		t.Errorf("union columns = %q, want c r u d l", got)
-	}
-	if got := paths[1].policies(); !reflect.DeepEqual(got, []string{"jwt-reader"}) {
-		t.Errorf("policies = %v", got)
+	if got := capColumns(rows[1].block.caps, cols); got != "c r u d l" {
+		t.Errorf("columns = %q, want c r u d l", got)
 	}
 }

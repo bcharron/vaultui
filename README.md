@@ -50,8 +50,8 @@ Home
 │                           rules with capability columns, cursor
 │                           expansion (comments, capabilities, HCL),
 │                           / filter, h raw document; the union row
-│                           merges every policy's paths with the
-│                           granting policies
+│                           lists every policy's paths, one row per
+│                           grant, with the granting policy
 ├── Auth Methods ......... enabled auth mounts (jwt, oidc, approle, ...)
 │   └── Auth detail
 │       ├── Config ........ sys/auth/{path}/tune

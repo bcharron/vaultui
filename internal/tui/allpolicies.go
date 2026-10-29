@@ -24,23 +24,20 @@ type policyEntry struct {
 	paths []policyPath
 }
 
-// pathGrant is one policy's grant of one path pattern.
-type pathGrant struct {
+// allPathRow is one policy's grant of one path pattern: one row of the
+// union list, where the policy column distinguishes paths granted by
+// more than one policy.
+type allPathRow struct {
 	policy string
 	block  policyPath
 }
 
-// allPath is one unique path pattern with every policy granting it.
-type allPath struct {
-	path   string
-	grants []pathGrant
-}
-
-// allPoliciesPage shows the union of every policy's path rules: one
-// row per unique path pattern with fixed capability columns and the
-// granting policies, and the cursor's expansion showing each grant in
-// detail. enter opens the first granting policy with the path preset
-// as its filter; / filters the path list.
+// allPoliciesPage shows every policy's path rules in one list: one
+// row per grant (path pattern + granting policy), with fixed
+// capability columns; paths granted by several policies appear once
+// per policy. The cursor's expansion shows the grant in detail.
+// enter opens the granting policy with the path preset as its
+// filter; / filters the list.
 type allPoliciesPage struct {
 	cl       *vaultapi.Client
 	nameList []string // policy names to fetch, fixed at construction
@@ -50,7 +47,7 @@ type allPoliciesPage struct {
 	loading  bool
 	err      error
 	warn     []string
-	paths    []allPath
+	rows     []allPathRow
 	cols     []string
 	cur, off int
 }
@@ -82,15 +79,15 @@ func (p *allPoliciesPage) Init() tea.Cmd {
 	}
 }
 
-// visible returns the paths matching the filter.
-func (p *allPoliciesPage) visible() []allPath {
+// visible returns the grants matching the filter (by path or policy).
+func (p *allPoliciesPage) visible() []allPathRow {
 	if p.filt.empty() {
-		return p.paths
+		return p.rows
 	}
-	var out []allPath
-	for _, ap := range p.paths {
-		if p.filt.match(ap.path) {
-			out = append(out, ap)
+	var out []allPathRow
+	for _, r := range p.rows {
+		if p.filt.match(r.block.path) || p.filt.match(r.policy) {
+			out = append(out, r)
 		}
 	}
 	return out
@@ -104,7 +101,7 @@ func (p *allPoliciesPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		p.loading = false
 		p.err = msg.err
 		p.warn = msg.warn
-		p.paths, p.cols = mergeAllPaths(msg.policies)
+		p.rows, p.cols = flattenAllPaths(msg.policies)
 		p.cur, p.off = 0, 0
 	case tea.KeyMsg:
 		if p.loading || p.err != nil {
@@ -135,8 +132,8 @@ func (p *allPoliciesPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			p.cur = pageJump(p.cur, max(p.h-3, 1), len(vis), true)
 		case "enter":
 			if p.cur < len(vis) {
-				np := newPolicyViewPage(p.cl, vis[p.cur].grants[0].policy)
-				np.filt.q = vis[p.cur].path
+				np := newPolicyViewPage(p.cl, vis[p.cur].policy)
+				np.filt.q = vis[p.cur].block.path
 				return p, Push(np)
 			}
 		}
@@ -144,44 +141,25 @@ func (p *allPoliciesPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 	return p, nil
 }
 
-// mergeAllPaths unions every policy's path rules into one sorted list
-// of unique paths, each carrying its granting policies sorted by
-// name, plus the fixed capability columns.
-func mergeAllPaths(entries []policyEntry) ([]allPath, []string) {
-	byPath := map[string][]pathGrant{}
+// flattenAllPaths turns every policy's path rules into one sorted
+// list of grants (path, then policy), plus the fixed capability
+// columns. Paths granted by several policies appear once per policy.
+func flattenAllPaths(entries []policyEntry) ([]allPathRow, []string) {
+	var rows []allPathRow
 	var blocks []policyPath
 	for _, e := range entries {
 		for _, pp := range e.paths {
-			byPath[pp.path] = append(byPath[pp.path], pathGrant{policy: e.name, block: pp})
+			rows = append(rows, allPathRow{policy: e.name, block: pp})
 			blocks = append(blocks, pp)
 		}
 	}
-	paths := make([]allPath, 0, len(byPath))
-	for path, grants := range byPath {
-		sort.Slice(grants, func(i, j int) bool { return grants[i].policy < grants[j].policy })
-		paths = append(paths, allPath{path: path, grants: grants})
-	}
-	sort.Slice(paths, func(i, j int) bool { return paths[i].path < paths[j].path })
-	return paths, policyCols(blocks)
-}
-
-// unionCaps returns the capabilities granted to a path across all its
-// granting policies.
-func (a allPath) unionCaps() []string {
-	var out []string
-	for _, g := range a.grants {
-		out = append(out, g.block.caps...)
-	}
-	return out
-}
-
-// policies returns the names of the granting policies, sorted.
-func (a allPath) policies() []string {
-	out := make([]string, 0, len(a.grants))
-	for _, g := range a.grants {
-		out = append(out, g.policy)
-	}
-	return out
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].block.path != rows[j].block.path {
+			return rows[i].block.path < rows[j].block.path
+		}
+		return rows[i].policy < rows[j].policy
+	})
+	return rows, policyCols(blocks)
 }
 
 func (p *allPoliciesPage) View() string {
@@ -193,7 +171,7 @@ func (p *allPoliciesPage) View() string {
 	}
 	vis := p.visible()
 	if len(vis) == 0 {
-		if p.filt.empty() && len(p.paths) == 0 {
+		if p.filt.empty() && len(p.rows) == 0 {
 			return dimStyle.Render("(no path rules in any policy)")
 		}
 		return p.filt.view() + "\n\n" + dimStyle.Render("(no matches)")
@@ -205,9 +183,9 @@ func (p *allPoliciesPage) View() string {
 	p.cur, p.off = window(p.cur, p.off, len(vis), rows)
 
 	longest := 0
-	for _, ap := range vis {
-		if len(ap.path) > longest {
-			longest = len(ap.path)
+	for _, r := range vis {
+		if len(r.block.path) > longest {
+			longest = len(r.block.path)
 		}
 	}
 	colsW := len(p.cols)*2 - 1
@@ -223,12 +201,11 @@ func (p *allPoliciesPage) View() string {
 	}
 	b.WriteString("\n")
 	for i := p.off; i < min(p.off+rows, len(vis)); i++ {
-		ap := vis[i]
-		path := fmt.Sprintf("%-*s", pathW, truncate(ap.path, pathW))
-		cols := capColumns(ap.unionCaps(), p.cols)
-		pols := strings.Join(ap.policies(), ",")
+		r := vis[i]
+		path := fmt.Sprintf("%-*s", pathW, truncate(r.block.path, pathW))
+		cols := capColumns(r.block.caps, p.cols)
 		polW := max(p.w-2-pathW-2-colsW-3, 0)
-		pols = truncate(pols, polW)
+		pols := truncate(r.policy, polW)
 		if i == p.cur {
 			b.WriteString(selBar(p.w, "  "+path+"  "+cols+"  "+pols) + "\n")
 			continue
@@ -243,27 +220,21 @@ func (p *allPoliciesPage) View() string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// expansion renders the selected path's grants: one section per
-// granting policy with its comment, capabilities, attributes and HCL
-// block.
-func (p *allPoliciesPage) expansion(vis []allPath) []string {
+// expansion renders the selected grant: the policy name, its caps,
+// the lead comment and the verbatim HCL block.
+func (p *allPoliciesPage) expansion(vis []allPathRow) []string {
 	if len(vis) == 0 || p.cur >= len(vis) {
 		return nil
 	}
-	ap := vis[p.cur]
+	g := vis[p.cur]
 	var lines []string
-	for i, g := range ap.grants {
-		if i > 0 {
-			lines = append(lines, "")
-		}
-		lines = append(lines, selStyle.Render(g.policy)+"  "+dimStyle.Render(strings.Join(sortCaps(g.block.caps), ", ")))
-		for _, c := range g.block.comments {
-			lines = append(lines, dimStyle.Render(c))
-		}
-		if g.block.src != "" {
-			for _, l := range strings.Split(g.block.src, "\n") {
-				lines = append(lines, "  "+valStyle.Render(l))
-			}
+	lines = append(lines, selStyle.Render(g.policy)+"  "+dimStyle.Render(strings.Join(sortCaps(g.block.caps), ", ")))
+	for _, c := range g.block.comments {
+		lines = append(lines, dimStyle.Render(c))
+	}
+	if g.block.src != "" {
+		for _, l := range strings.Split(g.block.src, "\n") {
+			lines = append(lines, "  "+valStyle.Render(l))
 		}
 	}
 	area := max(p.h-p.h/2-4, 4)
