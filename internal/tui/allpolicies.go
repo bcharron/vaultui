@@ -35,9 +35,8 @@ type allPathRow struct {
 // allPoliciesPage shows every policy's path rules in one list: one
 // row per grant (path pattern + granting policy), with fixed
 // capability columns; paths granted by several policies appear once
-// per policy. The cursor's expansion shows the grant in detail.
-// enter opens the granting policy in full context; / filters the
-// list.
+// per policy. The cursor's expansion summarizes the grant; enter
+// opens the grant's raw HCL; / filters the list.
 type allPoliciesPage struct {
 	cl       *vaultapi.Client
 	nameList []string // policy names to fetch, fixed at construction
@@ -132,10 +131,14 @@ func (p *allPoliciesPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			p.cur = pageJump(p.cur, max(p.h-3, 1), len(vis), true)
 		case "enter":
 			if p.cur < len(vis) {
-				// open the granting policy in full context (all its
-				// paths), not filtered to the row's path: the row's
-				// own rule is already in the expansion
-				return p, Push(newPolicyViewPage(p.cl, vis[p.cur].policy))
+				// the grant's raw HCL, the ground truth behind the
+				// expansion's summary
+				g := vis[p.cur]
+				src, path, policy := g.block.src, g.block.path, g.policy
+				return p, Push(newDetailPage(
+					fmt.Sprintf("path: %s (%s)", path, policy),
+					func() (string, []pageLink, error) { return src, nil, nil },
+				))
 			}
 		}
 	}
@@ -221,8 +224,9 @@ func (p *allPoliciesPage) View() string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// expansion renders the selected grant: the policy name, its caps,
-// the lead comment and the verbatim HCL block.
+// expansion renders the selected grant's summary: the policy name,
+// its caps and the lead comment. The full HCL is a keystroke away
+// (enter) rather than duplicated here.
 func (p *allPoliciesPage) expansion(vis []allPathRow) []string {
 	if len(vis) == 0 || p.cur >= len(vis) {
 		return nil
@@ -232,15 +236,6 @@ func (p *allPoliciesPage) expansion(vis []allPathRow) []string {
 	lines = append(lines, selStyle.Render(g.policy)+"  "+dimStyle.Render(strings.Join(sortCaps(g.block.caps), ", ")))
 	for _, c := range g.block.comments {
 		lines = append(lines, dimStyle.Render(c))
-	}
-	if g.block.src != "" {
-		for _, l := range strings.Split(g.block.src, "\n") {
-			lines = append(lines, "  "+valStyle.Render(l))
-		}
-	}
-	area := max(p.h-p.h/2-4, 4)
-	if len(lines) > area {
-		lines = append(lines[:area-1], dimStyle.Render(fmt.Sprintf("(+%d more lines)", len(lines)-area+1)))
 	}
 	return lines
 }
@@ -252,5 +247,5 @@ func (p *allPoliciesPage) Typing() bool { return p.filt.typing() }
 func (p *allPoliciesPage) Loading() bool { return p.loading }
 
 func (p *allPoliciesPage) Hints() string {
-	return "up/down select  enter open policy  / filter  ctrl+l redraw  q quit"
+	return "up/down select  enter hcl  / filter  ctrl+l redraw  q quit"
 }

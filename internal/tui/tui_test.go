@@ -270,8 +270,8 @@ func TestEndToEnd(t *testing.T) {
 		t.Errorf("filtered union list still shows cubbyhole/\n---\n%s\n---", m.View())
 	}
 	m = typeKeys(t, m, "enter") // commit the filter
-	m = typeKeys(t, m, "enter") // drill into the granting policy, filter preset
-	wantView(t, m, "policy: jwt-signer", "transit/sign/jwt-signer")
+	m = typeKeys(t, m, "enter") // the selected grant's raw HCL
+	wantView(t, m, "path: transit/sign/jwt-signer (jwt-signer)", "capabilities = [\"update\"]")
 	m = typeKeys(t, m, "esc")      // back to the union view (query still set)
 	m = typeKeys(t, m, "/", "esc") // clear the filter
 	wantView(t, m, "cubbyhole/")
