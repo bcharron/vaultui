@@ -51,6 +51,19 @@ func truncateLines(lines []string, area int) []string {
 	return lines
 }
 
+// expansionArea is the number of lines available to an expansion pane:
+// the page height less the title, blank line, separator and one spare
+// line, less the list rows actually shown. Short lists leave the pane
+// the space their window would have taken; a small floor keeps a
+// summary visible on tiny terminals.
+func expansionArea(h, rowsShown int, filterLine bool) int {
+	used := 4 + rowsShown
+	if filterLine {
+		used++
+	}
+	return max(h-used, 4)
+}
+
 // cfgExpansionLines renders a role-like item's summary for the
 // expansion pane: the policies it grants, then its scalar fields.
 // The full document stays one enter away.
@@ -262,10 +275,12 @@ func (p *roleListPage) View() string {
 	}
 	rows := p.rowsVisible()
 	p.cur, p.off = window(p.cur, p.off, len(vis), rows)
+	shown := min(rows, max(len(vis)-p.off, 0))
+	fl := p.filt.view()
 
 	var b strings.Builder
 	b.WriteString("  " + itemStyle.Render(p.mountPath) + "  " + dimStyle.Render(p.label) + listInfo(p.cur, len(vis), rows, what) + "\n")
-	if fl := p.filt.view(); fl != "" {
+	if fl != "" {
 		b.WriteString(fl + "\n")
 	}
 	b.WriteString("\n")
@@ -278,7 +293,7 @@ func (p *roleListPage) View() string {
 	}
 
 	b.WriteString(hRule(p.w) + "\n")
-	for _, l := range truncateLines(cfgExpansionLines(vis[p.cur], p.cfgs[p.endpoint+"/"+vis[p.cur]]), max(p.h-p.h/2-4, 4)) {
+	for _, l := range truncateLines(cfgExpansionLines(vis[p.cur], p.cfgs[p.endpoint+"/"+vis[p.cur]]), expansionArea(p.h, shown, fl != "")) {
 		b.WriteString(l + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")

@@ -402,7 +402,7 @@ func (p *engineDetailPage) expansion(vis []engineRow) []string {
 		return nil
 	}
 	r := vis[p.cur]
-	area := max(p.h-p.h/2-4, 4)
+	area := expansionArea(p.h, min(p.rowsVisible(), max(len(vis)-p.off, 0)), p.filt.view() != "")
 	switch r.kind {
 	case rowTune:
 		lines := []string{titleStyle.Render(engineTuneRowLabel)}

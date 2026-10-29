@@ -344,7 +344,14 @@ func TestEndToEnd(t *testing.T) {
 	wantView(t, m, "Config (tune)", "Roles")
 	m = typeKeys(t, m, "down", "enter")                                                  // the Roles row opens its own screen
 	wantView(t, m, "demo-service", "service-reader", "policies: jwt-signer, jwt-reader") // the expansion fetched the highlighted role
-	m = typeKeys(t, m, "enter")                                                          // read role demo-service (cursor on it)
+	// on a tall terminal the two-row list leaves the pane room for
+	// the whole summary: no elision while space remains
+	m = drive(t, m, tea.WindowSizeMsg{Width: 120, Height: 60})
+	if strings.Contains(m.View(), "more lines)") {
+		t.Errorf("roles expansion elided despite free space in the pane\n---\n%s\n---", m.View())
+	}
+	m = drive(t, m, tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = typeKeys(t, m, "enter") // read role demo-service (cursor on it)
 	wantView(t, m, "linked policies:", "[1] jwt-signer", "[2] jwt-reader", "token_policies: jwt-signer, jwt-reader", "bound_audiences: demo-services")
 	m = typeKeys(t, m, "1") // jump straight to the linked policy
 	wantView(t, m, "policy: jwt-signer", "transit/sign/jwt-signer", "capabilities")

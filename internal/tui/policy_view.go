@@ -264,9 +264,9 @@ func (p *policyViewPage) expansion(vis []policyPath) []string {
 		}
 	}
 
-	// Rich rules (long parameter lists) elide rather than push the
-	// layout around.
-	area := max(p.h-p.h/2-4, 4)
+	// Rich rules (long parameter lists) elide when the pane is full,
+	// but the pane grows into whatever the list window left unused.
+	area := expansionArea(p.h, min(p.rowsVisible(), max(len(vis)-p.off, 0)), p.filt.view() != "")
 	if len(lines) > area {
 		lines = append(lines[:area-1], dimStyle.Render(fmt.Sprintf("(+%d more lines)", len(lines)-area+1)))
 	}
