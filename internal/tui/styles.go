@@ -12,8 +12,10 @@ var (
 
 	// Header bar segment styles. Each carries the bar background
 	// explicitly: embedded ANSI resets would drop a wrapping
-	// background after the first styled segment.
-	topBarDim      = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Background(lipgloss.Color("62"))
+	// background after the first styled segment. Text on the bar
+	// uses a light foreground (252): dim greys are unreadable on the
+	// mid-purple 62 background.
+	topBarInfo     = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Background(lipgloss.Color("62"))
 	topBarCrumb    = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Background(lipgloss.Color("62"))
 	topBarBg       = lipgloss.NewStyle().Background(lipgloss.Color("62"))
 	dimStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))

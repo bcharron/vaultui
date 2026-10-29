@@ -168,12 +168,12 @@ func (a App) header() string {
 	if w <= 0 {
 		w = 80
 	}
-	left := topBarStyle.Render("vaultui") + topBarDim.Render(" "+a.addr)
+	left := topBarStyle.Render("vaultui") + topBarInfo.Render(" "+a.addr)
 	if a.clusterName != "" {
-		left += topBarDim.Render("  cluster: " + a.clusterName)
+		left += topBarInfo.Render("  cluster: " + a.clusterName)
 	}
 	if a.tokenExpiry != "" {
-		left += topBarDim.Render("  token: " + a.tokenExpiry)
+		left += topBarInfo.Render("  token: " + a.tokenExpiry)
 	}
 	right := topBarCrumb.Render(a.top().Header())
 	pad := w - lipgloss.Width(left) - lipgloss.Width(right) - 1
