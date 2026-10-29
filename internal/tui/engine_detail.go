@@ -89,15 +89,24 @@ func newEngineDetailPage(cl *vaultapi.Client, m vault.Mount) *engineDetailPage {
 		cfgLoading:    true,
 		ecfgEndpoints: vault.EngineConfigEndpoints(m.Type),
 	}
-	for _, g := range vault.RoleGroups(m.Type) {
-		p.groups = append(p.groups, groupState{
-			label:    g.Label,
-			endpoint: g.Endpoint,
-			loading:  true,
-		})
+	if m.Type == "kv" {
+		// KV engines have no role endpoints; their single group row
+		// opens the KV browser, and the count comes from the mount's
+		// top-level entries.
+		p.groups = append(p.groups, groupState{label: "Keys", loading: true})
+	} else {
+		for _, g := range vault.RoleGroups(m.Type) {
+			p.groups = append(p.groups, groupState{
+				label:    g.Label,
+				endpoint: g.Endpoint,
+				loading:  true,
+			})
+		}
 	}
 	return p
 }
+
+func (p *engineDetailPage) isKV() bool { return p.m.Type == "kv" }
 
 func (p *engineDetailPage) Init() tea.Cmd {
 	cl, m := p.cl, p.m
@@ -107,12 +116,19 @@ func (p *engineDetailPage) Init() tea.Cmd {
 			return tuneLoadedMsg{path: m.Path, kv: kv, err: err}
 		},
 	}
-	for _, g := range p.groups {
-		g := g
+	if p.isKV() {
 		cmds = append(cmds, func() tea.Msg {
-			roles, err := vault.ListRoles(cl, m.Path, g.endpoint)
-			return rolesLoadedMsg{path: m.Path, endpoint: g.endpoint, roles: roles, err: err}
+			entries, err := vault.ListKV(cl, m, "")
+			return kvEntriesLoadedMsg{mount: m.Path, sub: "", entries: entries, err: err}
 		})
+	} else {
+		for _, g := range p.groups {
+			g := g
+			cmds = append(cmds, func() tea.Msg {
+				roles, err := vault.ListRoles(cl, m.Path, g.endpoint)
+				return rolesLoadedMsg{path: m.Path, endpoint: g.endpoint, roles: roles, err: err}
+			})
+		}
 	}
 	return tea.Batch(cmds...)
 }
@@ -157,6 +173,17 @@ func (p *engineDetailPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		g.loading = false
 		g.err = msg.err
 		g.roles = msg.roles
+	case kvEntriesLoadedMsg:
+		if !p.isKV() || msg.mount != p.m.Path || msg.sub != "" || len(p.groups) == 0 {
+			return p, nil
+		}
+		g := &p.groups[0]
+		g.loading = false
+		g.err = msg.err
+		g.roles = make([]string, 0, len(msg.entries))
+		for _, e := range msg.entries {
+			g.roles = append(g.roles, e.Name)
+		}
 	case tea.KeyMsg:
 		return p.updateKeys(msg)
 	}
@@ -242,6 +269,10 @@ func (p *engineDetailPage) enter(r engineRow) tea.Cmd {
 			},
 		))
 	case rowGroup:
+		if p.isKV() {
+			// the Keys row opens the KV browser
+			return Push(newKVPage(cl, m, ""))
+		}
 		g := p.groupByEndpoint(r.ep)
 		crumb := fmt.Sprintf("engines / %s / %s", strings.TrimSuffix(m.Path, "/"), strings.ToLower(g.label))
 		return Push(newRoleListPage(cl, m.Path, g.endpoint, g.label, crumb))

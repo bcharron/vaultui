@@ -105,10 +105,10 @@ func authRoleTabLabel(authType string) string {
 	}
 }
 
-// authDetailPage shows one auth method's role-like items in a single
-// list: a synthetic row opening the mount's tune config on top, then
-// the roles. The cursor's item expands at the bottom with its
-// policies and config summary; enter opens the full document.
+// authDetailPage is the auth method's own screen, mirroring the engine
+// page: a row opening the mount's tune config, and one row for the
+// method's role-like items, which opens their own list screen. The
+// selected row's summary expands at the bottom.
 type authDetailPage struct {
 	cl   *vaultapi.Client
 	m    vault.Mount
@@ -116,15 +116,14 @@ type authDetailPage struct {
 	filt filter
 
 	cfgLoading bool
-	cfgText    string // tune config, for the tune row's expansion
+	cfgText    string
 
 	rolesLoading bool
 	rolesErr     error
 	roles        []string
+	roleEndpoint string
 
-	cfgs         map[string]*roleCfg // role configs, fetched lazily
-	roleEndpoint string              // list endpoint, to filter role messages
-	cur, off     int
+	cur, off int
 }
 
 type authTuneLoadedMsg struct {
@@ -139,7 +138,6 @@ func newAuthDetailPage(cl *vaultapi.Client, m vault.Mount) *authDetailPage {
 		m:            m,
 		cfgLoading:   true,
 		rolesLoading: true,
-		cfgs:         map[string]*roleCfg{},
 		roleEndpoint: vault.AuthRoleListEndpoint(m.Type),
 	}
 }
@@ -177,16 +175,6 @@ func (p *authDetailPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		p.rolesLoading = false
 		p.rolesErr = msg.err
 		p.roles = msg.roles
-		p.cur, p.off = 0, 0
-	case roleCfgMsg:
-		if msg.path != "auth/"+p.m.Path {
-			return p, nil
-		}
-		if c := p.cfgs[msg.key]; c != nil {
-			c.loading = false
-			c.err = msg.err
-			c.data = msg.data
-		}
 	case tea.KeyMsg:
 		return p.updateKeys(msg)
 	}
@@ -197,7 +185,7 @@ func (p *authDetailPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 	if p.filt.typing() {
 		if p.filt.update(msg) {
 			p.cur, p.off = 0, 0
-			return p, p.ensureCfg()
+			return p, nil
 		}
 	} else if msg.String() == "/" {
 		p.filt.active = true
@@ -228,25 +216,58 @@ func (p *authDetailPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 			}
 		}
 	}
-	return p, p.ensureCfg()
+	return p, nil
 }
 
-// authRow is one row of the auth page's list: the synthetic tune row
-// on top, then the roles.
-type authRow struct {
-	role string // empty for the tune row
-}
-
-// visible returns the rows matching the filter: the tune row when it
-// matches, then the matching roles.
-func (p *authDetailPage) visible() []authRow {
-	var out []authRow
-	if p.filt.match(engineTuneRowLabel) {
-		out = append(out, authRow{})
+// enter opens the selected row: the tune config document, or the
+// roles' own list screen.
+func (p *authDetailPage) enter(r engineRow) tea.Cmd {
+	cl, m := p.cl, p.m
+	if r.kind == rowTune {
+		return Push(newDetailPage(
+			fmt.Sprintf("config: auth/%s", strings.TrimSuffix(m.Path, "/")),
+			func() (string, []pageLink, error) {
+				kv, err := vault.AuthTune(cl, m.Path)
+				if err != nil {
+					return "", nil, err
+				}
+				return formatPairs(kv), nil, nil
+			},
+		))
 	}
-	for _, r := range p.roles {
-		if p.filt.match(r) {
-			out = append(out, authRow{role: r})
+	label := authRoleTabLabel(m.Type)
+	crumb := fmt.Sprintf("auth / %s / %s", strings.TrimSuffix(m.Path, "/"), strings.ToLower(label))
+	return Push(newRoleListPage(cl, "auth/"+m.Path, p.roleEndpoint, label, crumb))
+}
+
+// rows is the page's fixed row list: the tune config and the roles.
+func (p *authDetailPage) rows() []engineRow {
+	return []engineRow{
+		{kind: rowTune, label: engineTuneRowLabel},
+		{kind: rowGroup, label: authRoleTabLabel(p.m.Type)},
+	}
+}
+
+// visible returns the rows matching the filter. The roles row matches
+// on its label or on any role name, so filtering for a role keeps the
+// row reachable.
+func (p *authDetailPage) visible() []engineRow {
+	if p.filt.empty() {
+		return p.rows()
+	}
+	var out []engineRow
+	for _, r := range p.rows() {
+		if p.filt.match(r.label) {
+			out = append(out, r)
+			continue
+		}
+		if r.kind == rowGroup {
+			for _, name := range p.roles {
+				if p.filt.match(name) {
+					out = append(out, r)
+					break
+				}
+			}
 		}
 	}
 	return out
@@ -260,53 +281,7 @@ func (p *authDetailPage) rowsVisible() int {
 	return rows
 }
 
-// ensureCfg prefetches the selected role's configuration for the
-// expansion pane; already-cached roles are not re-fetched.
-func (p *authDetailPage) ensureCfg() tea.Cmd {
-	vis := p.visible()
-	if p.cur >= len(vis) {
-		return nil
-	}
-	r := vis[p.cur]
-	if r.role == "" {
-		return nil
-	}
-	key := p.roleEndpoint + "/" + r.role
-	if _, ok := p.cfgs[key]; ok {
-		return nil
-	}
-	p.cfgs[key] = &roleCfg{loading: true}
-	return roleCfgFetch(p.cl, "auth/"+p.m.Path, p.roleEndpoint, r.role)
-}
-
-// enter opens the selected row: the tune row and each role push
-// ordinary stacked pages.
-func (p *authDetailPage) enter(r authRow) tea.Cmd {
-	cl, m := p.cl, p.m
-	if r.role == "" {
-		return Push(newDetailPage(
-			fmt.Sprintf("config: auth/%s", strings.TrimSuffix(m.Path, "/")),
-			func() (string, []pageLink, error) {
-				kv, err := vault.AuthTune(cl, m.Path)
-				if err != nil {
-					return "", nil, err
-				}
-				return formatPairs(kv), nil, nil
-			},
-		))
-	}
-	name := r.role
-	dp := newRoleDetailPage(cl, "auth/"+m.Path, vault.AuthRoleListEndpoint(m.Type), authRoleTabLabel(m.Type), name)
-	return Push(dp)
-}
-
 func (p *authDetailPage) View() string {
-	if p.rolesLoading {
-		return loadingStyle.Render("loading " + strings.ToLower(authRoleTabLabel(p.m.Type)) + " ...")
-	}
-	if p.rolesErr != nil {
-		return errStyle.Render("error listing " + strings.ToLower(authRoleTabLabel(p.m.Type)) + ": " + p.rolesErr.Error())
-	}
 	vis := p.visible()
 	if len(vis) == 0 {
 		return p.filt.view() + "\n\n" + dimStyle.Render("(no matches)")
@@ -315,13 +290,18 @@ func (p *authDetailPage) View() string {
 	p.cur, p.off = window(p.cur, p.off, len(vis), rows)
 
 	var b strings.Builder
-	b.WriteString("  " + itemStyle.Render(p.m.Path) + "  " + dimStyle.Render(p.m.Type+" "+p.m.Accessor) + listInfo(max(p.cur-1, 0), len(p.roles), rows, strings.ToLower(authRoleTabLabel(p.m.Type))) + "\n")
+	b.WriteString("  " + itemStyle.Render(p.m.Path) + "  " + dimStyle.Render(p.m.Type+" "+p.m.Accessor) + "\n")
 	if fl := p.filt.view(); fl != "" {
 		b.WriteString(fl + "\n")
 	}
 	b.WriteString("\n")
 	for i := p.off; i < min(p.off+rows, len(vis)); i++ {
-		b.WriteString(p.row(vis[i], i == p.cur) + "\n")
+		if i == p.cur {
+			// plain text so the highlight bar paints uniformly
+			b.WriteString(selBar(p.w, "  "+p.rowPlain(vis[i])) + "\n")
+			continue
+		}
+		b.WriteString("  " + p.rowText(vis[i]) + "\n")
 	}
 
 	b.WriteString(hRule(p.w) + "\n")
@@ -331,28 +311,43 @@ func (p *authDetailPage) View() string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func (p *authDetailPage) row(r authRow, sel bool) string {
-	if r.role == "" {
-		if sel {
-			return selBar(p.w, "  "+engineTuneRowLabel)
-		}
-		return "  " + itemStyle.Render(engineTuneRowLabel)
+func (p *authDetailPage) rowPlain(r engineRow) string {
+	if r.kind == rowGroup {
+		return r.label + p.rolesNote()
 	}
-	if sel {
-		return selBar(p.w, "  "+r.role)
+	return r.label
+}
+
+func (p *authDetailPage) rowText(r engineRow) string {
+	if r.kind == rowGroup {
+		return itemStyle.Render(r.label) + dimStyle.Render(p.rolesNote())
 	}
-	return "  " + p.filt.highlight(r.role, itemStyle)
+	return itemStyle.Render(r.label)
+}
+
+// rolesNote is the dim suffix of the roles row: its loading state or
+// role count.
+func (p *authDetailPage) rolesNote() string {
+	switch {
+	case p.rolesLoading:
+		return "  ..."
+	case p.rolesErr != nil:
+		return "  (error)"
+	case len(p.roles) == 0:
+		return "  (none)"
+	}
+	return fmt.Sprintf("  %d", len(p.roles))
 }
 
 // expansion renders the selected row's summary below the rule: the
-// tune pairs for the config row, the role's config otherwise.
-func (p *authDetailPage) expansion(vis []authRow) []string {
+// tune pairs, or the roles row's item names.
+func (p *authDetailPage) expansion(vis []engineRow) []string {
 	if p.cur >= len(vis) {
 		return nil
 	}
 	r := vis[p.cur]
 	area := max(p.h-p.h/2-4, 4)
-	if r.role == "" {
+	if r.kind == rowTune {
 		lines := []string{titleStyle.Render(engineTuneRowLabel)}
 		if p.cfgLoading {
 			lines = append(lines, dimStyle.Render("loading ..."))
@@ -361,7 +356,22 @@ func (p *authDetailPage) expansion(vis []authRow) []string {
 		}
 		return truncateLines(lines, area)
 	}
-	return truncateLines(cfgExpansionLines(r.role, p.cfgs[p.roleEndpoint+"/"+r.role]), area)
+	what := strings.ToLower(authRoleTabLabel(p.m.Type))
+	lines := []string{titleStyle.Render(r.label)}
+	switch {
+	case p.rolesLoading:
+		lines = append(lines, dimStyle.Render("loading "+what+" ..."))
+	case p.rolesErr != nil:
+		lines = append(lines, dimStyle.Render("error: "+p.rolesErr.Error()))
+	default:
+		for _, name := range p.roles {
+			lines = append(lines, "  "+itemStyle.Render(name))
+		}
+		if len(p.roles) == 0 {
+			lines = append(lines, dimStyle.Render("(none)"))
+		}
+	}
+	return truncateLines(lines, area)
 }
 
 func (p *authDetailPage) Header() string {
@@ -370,7 +380,7 @@ func (p *authDetailPage) Header() string {
 
 func (p *authDetailPage) Typing() bool { return p.filt.typing() }
 
-func (p *authDetailPage) Loading() bool { return p.rolesLoading || p.cfgLoading }
+func (p *authDetailPage) Loading() bool { return p.cfgLoading || p.rolesLoading }
 
 func (p *authDetailPage) Hints() string {
 	return "up/down select  enter open  / filter  r refresh  esc back  ctrl+l redraw  q quit"

@@ -220,25 +220,29 @@ func TestEndToEnd(t *testing.T) {
 	m = openMenu(t, m, "Secret Engines")
 	wantView(t, m, "secret/", "legacy/", "transit/", "pki/", "cubbyhole/")
 
-	// KV v2: secret/ -> browser, tune config first, then apps/api
+	// KV v2: secret/ -> engine page; Keys opens the browser
 	m = openEngine(t, m, cl, "secret/")
-	wantView(t, m, "Config (tune)", "apps/", "db/")
+	wantView(t, m, "Config (tune)", "Keys")
 	m = typeKeys(t, m, "enter") // the tune row opens the config doc
 	wantView(t, m, "default_lease_ttl")
 	m = typeKeys(t, m, "esc")
-	m = typeKeys(t, m, "down", "enter") // into apps/
+	m = typeKeys(t, m, "down", "enter") // the Keys row opens the browser
+	wantView(t, m, "apps/", "db/")
+	m = typeKeys(t, m, "enter") // into apps/
 	wantView(t, m, "api", "web")
-	m = typeKeys(t, m, "down", "enter") // cursor skips the config row; read secret apps/api
+	m = typeKeys(t, m, "enter") // read secret apps/api (cursor on api)
 	wantView(t, m, "version: 2", "db_port: 5433", "notes: rotated port", "-- metadata --", "-- data --")
-	m = typeKeys(t, m, "esc", "esc", "esc", "esc") // back to home
+	m = typeKeys(t, m, "esc", "esc", "esc", "esc", "esc") // doc -> apps -> root -> engine -> engines -> home
 	wantView(t, m, "Secret Engines")
 
 	// KV v1: legacy/
 	m = openEngine(t, m, cl, "legacy/")
-	wantView(t, m, "Config (tune)", "creds", "misc")
-	m = typeKeys(t, m, "down", "enter") // read legacy/creds
+	wantView(t, m, "Config (tune)", "Keys")
+	m = typeKeys(t, m, "down", "enter") // the Keys row opens the browser
+	wantView(t, m, "creds", "misc")
+	m = typeKeys(t, m, "enter") // read legacy/creds (cursor on creds)
 	wantView(t, m, "foo: bar", "baz: qux")
-	m = typeKeys(t, m, "esc", "esc", "esc")
+	m = typeKeys(t, m, "esc", "esc", "esc", "esc") // doc -> browser -> engine -> engines -> home
 
 	// Transit keys: the engine page lists config and groups; Keys has
 	// its own screen
@@ -337,14 +341,14 @@ func TestEndToEnd(t *testing.T) {
 	m = openMenu(t, m, "Auth Methods")
 	wantView(t, m, "jwt/", "token/")
 	m = typeKeys(t, m, "enter") // jwt/ sorts before token/
-	wantView(t, m, "Config (tune)", "demo-service", "service-reader")
-	m = typeKeys(t, m, "down") // demo-service; the expansion fetches its config
-	wantView(t, m, "policies: jwt-signer, jwt-reader")
-	m = typeKeys(t, m, "enter") // read role demo-service
+	wantView(t, m, "Config (tune)", "Roles")
+	m = typeKeys(t, m, "down", "enter")                                                  // the Roles row opens its own screen
+	wantView(t, m, "demo-service", "service-reader", "policies: jwt-signer, jwt-reader") // the expansion fetched the highlighted role
+	m = typeKeys(t, m, "enter")                                                          // read role demo-service (cursor on it)
 	wantView(t, m, "linked policies:", "[1] jwt-signer", "[2] jwt-reader", "token_policies: jwt-signer, jwt-reader", "bound_audiences: demo-services")
 	m = typeKeys(t, m, "1") // jump straight to the linked policy
 	wantView(t, m, "policy: jwt-signer", "transit/sign/jwt-signer", "capabilities")
-	m = typeKeys(t, m, "esc", "esc", "esc", "esc", "esc") // policy -> role -> auth detail -> auth list -> home
+	m = typeKeys(t, m, "esc", "esc", "esc", "esc", "esc") // policy -> role -> roles -> auth detail -> auth list -> home
 	wantView(t, m, "Secret Engines")
 
 	// Token info + capabilities check
@@ -363,12 +367,13 @@ func TestEndToEnd(t *testing.T) {
 
 	// KV v2 version history: apps/api has two versions
 	m = openEngine(t, m, cl, "secret/")
-	m = typeKeys(t, m, "down", "enter") // into apps/
-	m = typeKeys(t, m, "down", "v")     // versions of api (cursor skips the config row)
+	m = typeKeys(t, m, "down", "enter") // the Keys row opens the browser
+	m = typeKeys(t, m, "enter")         // into apps/
+	m = typeKeys(t, m, "v")             // versions of api (cursor on api)
 	wantView(t, m, "v2", "v1", "current")
 	m = typeKeys(t, m, "down", "enter") // view version 1
 	wantView(t, m, "version: 1", "db_host: db01.internal")
-	m = typeKeys(t, m, "esc", "esc", "esc", "esc", "esc") // back to home
+	m = typeKeys(t, m, "esc", "esc", "esc", "esc", "esc", "esc") // versions -> apps -> root -> engine -> engines -> home
 
 	// Leases: drill to the non-expiring root token lease
 	m = openMenu(t, m, "Leases")
