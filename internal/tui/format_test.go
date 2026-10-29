@@ -87,22 +87,6 @@ func TestStatusSummary(t *testing.T) {
 	}
 }
 
-func TestTokenSummary(t *testing.T) {
-	got := tokenSummary(map[string]interface{}{"display_name": "root", "ttl": float64(0)}, time.Now())
-	if !strings.Contains(got, "root") || !strings.Contains(got, "no expiry") {
-		t.Errorf("root token summary = %q", got)
-	}
-
-	got = tokenSummary(map[string]interface{}{"display_name": "app", "ttl": float64(1800)}, time.Now())
-	if !strings.Contains(got, "app") || !strings.Contains(got, "30m left") {
-		t.Errorf("ttl token summary = %q", got)
-	}
-
-	if got := tokenSummary(nil, time.Now()); got != "" {
-		t.Errorf("nil token summary = %q, want \"\"", got)
-	}
-}
-
 func TestTokenExpiryLabel(t *testing.T) {
 	at := time.Now().Add(-90 * time.Second)
 	if got := tokenExpiryLabel(1800, at); got != "28m30s left" {

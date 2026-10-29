@@ -20,8 +20,8 @@ type resizeMsg struct{ w, h int }
 type pushMsg struct{ page Page }
 type popMsg struct{}
 
-// tickMsg drives the token countdown: the header and home status line
-// recompute the estimated time left from the launch TTL on every tick.
+// tickMsg drives the token countdown: the header recomputes the
+// estimated time left from the launch TTL on every tick.
 type tickMsg time.Time
 
 // tickEvery returns a command that delivers a tickMsg after d. Do not
@@ -31,6 +31,19 @@ func tickEvery(d time.Duration) tea.Cmd {
 	return tea.Tick(d, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
+// appHealthMsg and appTokenMsg carry the header's background fetches:
+// sys/health for the cluster name, auth/token/lookup-self for the
+// token expiry countdown.
+type appHealthMsg struct {
+	health map[string]interface{}
+	err    error
+}
+
+type appTokenMsg struct {
+	data map[string]interface{}
+	err  error
+}
+
 // tokenRefreshDue reports whether the periodic lookup-self re-fetch is
 // due: a minute after the last successful anchor, at most one attempt
 // per minute even when attempts fail.
@@ -38,6 +51,32 @@ func tokenRefreshDue(anchor, lastProbe, now time.Time) bool {
 	return !anchor.IsZero() &&
 		now.Sub(anchor) >= time.Minute &&
 		(lastProbe.IsZero() || now.Sub(lastProbe) >= time.Minute)
+}
+
+// tokenTTLFrom extracts the remaining TTL in seconds from lookup-self
+// data; -1 when unknown.
+func tokenTTLFrom(data map[string]interface{}) int {
+	if ttl, ok := data["ttl"].(float64); ok {
+		return int(ttl)
+	}
+	return -1
+}
+
+// tokenExpiryLabel renders the token's remaining validity, counting
+// down from a TTL fetched at at: "28m30s left", "no expiry", or ""
+// when unknown.
+func tokenExpiryLabel(ttl int, at time.Time) string {
+	switch {
+	case ttl < 0:
+		return ""
+	case ttl == 0:
+		return "no expiry"
+	}
+	rem := ttl - int(time.Since(at).Seconds())
+	if rem <= 0 {
+		return "expired"
+	}
+	return humanDuration(rem) + " left"
 }
 
 // Push returns a command that navigates onto a new page.
@@ -89,7 +128,20 @@ func New(cl *vaultapi.Client) App {
 func (a App) top() Page { return a.stack[len(a.stack)-1] }
 
 func (a App) Init() tea.Cmd {
-	return tea.Batch(a.top().Init(), a.sp.Tick, tickEvery(time.Second))
+	cl := a.cl
+	return tea.Batch(
+		a.top().Init(),
+		a.sp.Tick,
+		tickEvery(time.Second),
+		func() tea.Msg {
+			health, err := vault.Health(cl)
+			return appHealthMsg{health: health, err: err}
+		},
+		func() tea.Msg {
+			data, err := vault.LookupSelf(cl)
+			return appTokenMsg{data: data, err: err}
+		},
+	)
 }
 
 func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -136,23 +188,22 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.sp, cmd = a.sp.Update(msg)
 		return a, cmd
 
-	case homeHealthMsg:
-		// The home screen's fetch also feeds the header's cluster name.
+	case appHealthMsg:
 		if msg.err == nil {
 			if n, ok := msg.health["cluster_name"].(string); ok {
 				a.clusterName = n
 			}
 		}
-		return a.broadcast(msg)
+		return a, nil
 
-	case homeTokenMsg:
-		// ... and its lookup-self anchors the countdown of the token
-		// expiry shown in the header.
+	case appTokenMsg:
+		// The lookup anchors the countdown of the token expiry shown
+		// in the header.
 		if msg.err == nil {
 			a.tokenTTL = tokenTTLFrom(msg.data)
 			a.tokenAt = time.Now()
 		}
-		return a.broadcast(msg)
+		return a, nil
 
 	case tickMsg:
 		cmds := []tea.Cmd{tickEvery(time.Second)}
@@ -164,7 +215,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cl := a.cl
 			cmds = append(cmds, func() tea.Msg {
 				data, err := vault.LookupSelf(cl)
-				return homeTokenMsg{data: data, err: err}
+				return appTokenMsg{data: data, err: err}
 			})
 		}
 		return a, tea.Batch(cmds...)
