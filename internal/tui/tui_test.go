@@ -259,10 +259,26 @@ func TestEndToEnd(t *testing.T) {
 	wantView(t, m, "test.local")
 	m = typeKeys(t, m, "esc", "esc", "esc", "esc")
 
-	// Policies: pgdown jumps to the last policy; the view shows fixed
-	// capability columns, comments and the verbatim HCL block
+	// Policies: the union view merges every policy's paths
 	m = openMenu(t, m, "ACL Policies")
-	wantView(t, m, "default", "root", "team-apps", "jwt-signer", "jwt-reader")
+	wantView(t, m, "All policies (union)", "default", "root", "team-apps", "jwt-signer", "jwt-reader")
+	m = typeKeys(t, m, "enter") // union of all policies
+	wantView(t, m, "auth/token/lookup-self", "secret/data/apps/*", "cubbyhole/", "team-apps", "c r u d l")
+	m = typeKeys(t, m, "/", "t", "r", "a", "n", "s", "i", "t", "/", "s", "i", "g", "n")
+	wantView(t, m, "transit/sign/jwt-signer", "jwt-signer")
+	if strings.Contains(m.View(), "cubbyhole/") {
+		t.Errorf("filtered union list still shows cubbyhole/\n---\n%s\n---", m.View())
+	}
+	m = typeKeys(t, m, "enter") // commit the filter
+	m = typeKeys(t, m, "enter") // drill into the granting policy, filter preset
+	wantView(t, m, "policy: jwt-signer", "transit/sign/jwt-signer")
+	m = typeKeys(t, m, "esc")      // back to the union view (query still set)
+	m = typeKeys(t, m, "/", "esc") // clear the filter
+	wantView(t, m, "cubbyhole/")
+	m = typeKeys(t, m, "esc") // back to the policy list
+
+	// pgdown jumps to the last policy; the view shows fixed
+	// capability columns, comments and the verbatim HCL block
 	m = typeKeys(t, m, "pgdown", "enter") // last policy: team-apps
 	wantView(t, m, "secret/data/apps/*", "c r u d l",
 		"capabilities: create, read, update, delete, list",
@@ -279,7 +295,7 @@ func TestEndToEnd(t *testing.T) {
 
 	// default policy: / filters the path list
 	m = openMenu(t, m, "ACL Policies")
-	m = typeKeys(t, m, "enter") // default (cursor at top)
+	m = typeKeys(t, m, "down", "enter") // default (below the union row)
 	m = typeKeys(t, m, "/", "r", "e", "n", "e", "w")
 	wantView(t, m, "auth/token/renew-self")
 	if strings.Contains(m.View(), "cubbyhole/") {

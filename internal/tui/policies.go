@@ -25,6 +25,10 @@ type policiesLoadedMsg struct {
 	err   error
 }
 
+// allPoliciesEntry is the synthetic first row of the policies list:
+// it opens the union of every policy's paths.
+const allPoliciesEntry = "All policies (union)"
+
 func newPoliciesPage(cl *vaultapi.Client) *policiesPage {
 	return &policiesPage{cl: cl, loading: true}
 }
@@ -78,6 +82,9 @@ func (p *policiesPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			p.cur = pageJump(p.cur, max(p.h-3, 1), len(vis), true)
 		case "enter":
 			if p.cur < len(vis) {
+				if vis[p.cur] == allPoliciesEntry {
+					return p, Push(newAllPoliciesPage(p.cl, p.names))
+				}
 				return p, Push(newPolicyDetailPage(p.cl, vis[p.cur]))
 			}
 		case "r":
@@ -89,12 +96,16 @@ func (p *policiesPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 	return p, nil
 }
 
-// visible returns the policy names matching the filter.
+// visible returns the union row (when it matches the filter) plus the
+// policy names matching the filter.
 func (p *policiesPage) visible() []string {
-	if p.filt.empty() {
-		return p.names
-	}
 	var out []string
+	if p.filt.match(allPoliciesEntry) {
+		out = append(out, allPoliciesEntry)
+	}
+	if p.filt.empty() {
+		return append(out, p.names...)
+	}
 	for _, n := range p.names {
 		if p.filt.match(n) {
 			out = append(out, n)
@@ -134,9 +145,13 @@ func (p *policiesPage) View() string {
 	for i := p.off; i < min(p.off+rows, len(vis)); i++ {
 		if i == p.cur {
 			b.WriteString(selBar(p.w, "  "+vis[i]) + "\n")
-		} else {
-			b.WriteString("  " + p.filt.highlight(vis[i], itemStyle) + "\n")
+			continue
 		}
+		if vis[i] == allPoliciesEntry {
+			b.WriteString("  " + typeStyle.Render(vis[i]) + "\n")
+			continue
+		}
+		b.WriteString("  " + p.filt.highlight(vis[i], itemStyle) + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

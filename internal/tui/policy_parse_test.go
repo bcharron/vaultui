@@ -114,3 +114,39 @@ func TestSortCaps(t *testing.T) {
 		t.Errorf("sortCaps = %v, want %v", got, want)
 	}
 }
+
+func TestMergeAllPaths(t *testing.T) {
+	entries := []policyEntry{
+		{
+			name: "team-apps",
+			paths: []policyPath{
+				{path: "secret/data/apps/*", caps: []string{"create", "read", "update", "delete", "list"}},
+			},
+		},
+		{
+			name: "jwt-reader",
+			paths: []policyPath{
+				{path: "transit/verify/jwt-signer", caps: []string{"update"}},
+				{path: "secret/data/apps/*", caps: []string{"read"}},
+			},
+		},
+	}
+	paths, cols := mergeAllPaths(entries)
+	if len(paths) != 2 {
+		t.Fatalf("got %d paths, want 2", len(paths))
+	}
+	if paths[0].path != "secret/data/apps/*" || paths[1].path != "transit/verify/jwt-signer" {
+		t.Errorf("paths not sorted: %+v", paths)
+	}
+	// shared path carries both grants, sorted by policy name
+	g0 := paths[0].grants
+	if len(g0) != 2 || g0[0].policy != "jwt-reader" || g0[1].policy != "team-apps" {
+		t.Errorf("grants = %+v", g0)
+	}
+	if got := capColumns(paths[0].unionCaps(), cols); got != "c r u d l" {
+		t.Errorf("union columns = %q, want c r u d l", got)
+	}
+	if got := paths[1].policies(); !reflect.DeepEqual(got, []string{"jwt-reader"}) {
+		t.Errorf("policies = %v", got)
+	}
+}

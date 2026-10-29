@@ -46,7 +46,12 @@ Home
 │       └── Browse ........ KV v1/v2 key listing (KV engines)
 │           └── KV browser  directory tree navigation
 │               └── Secret  key/value data plus v2 metadata
-├── ACL Policies ......... list + policy document viewer
+├── ACL Policies ......... list + policy viewer: alphabetical path
+│                           rules with capability columns, cursor
+│                           expansion (comments, capabilities, HCL),
+│                           / filter, h raw document; the union row
+│                           merges every policy's paths with the
+│                           granting policies
 ├── Auth Methods ......... enabled auth mounts (jwt, oidc, approle, ...)
 │   └── Auth detail
 │       ├── Config ........ sys/auth/{path}/tune
