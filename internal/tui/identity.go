@@ -115,6 +115,20 @@ func (p *identityPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 			p.gcur++
 		}
 		return p, nil
+	case "pgup":
+		if p.tab == 0 {
+			p.ecur = pageJump(p.ecur, max(p.h-3, 1), len(ents), false)
+		} else {
+			p.gcur = pageJump(p.gcur, max(p.h-3, 1), len(grps), false)
+		}
+		return p, nil
+	case "pgdown":
+		if p.tab == 0 {
+			p.ecur = pageJump(p.ecur, max(p.h-3, 1), len(ents), true)
+		} else {
+			p.gcur = pageJump(p.gcur, max(p.h-3, 1), len(grps), true)
+		}
+		return p, nil
 	case "enter":
 		return p.enter()
 	case "r":

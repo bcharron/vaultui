@@ -71,6 +71,12 @@ func keyMsg(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyRight}
 	case "tab":
 		return tea.KeyMsg{Type: tea.KeyTab}
+	case "pgup":
+		return tea.KeyMsg{Type: tea.KeyPgUp}
+	case "pgdown":
+		return tea.KeyMsg{Type: tea.KeyPgDown}
+	case "ctrl+l":
+		return tea.KeyMsg{Type: tea.KeyCtrlL}
 	default:
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 	}
@@ -253,16 +259,34 @@ func TestEndToEnd(t *testing.T) {
 	wantView(t, m, "test.local")
 	m = typeKeys(t, m, "esc", "esc", "esc", "esc")
 
-	// Policies
+	// Policies: pgdown jumps to the last policy; the view shows fixed
+	// capability columns, comments and the verbatim HCL block
 	m = openMenu(t, m, "ACL Policies")
 	wantView(t, m, "default", "root", "team-apps", "jwt-signer", "jwt-reader")
-	m = typeKeys(t, m, "down", "down", "down", "down", "enter") // team-apps
-	wantView(t, m, "secret/data/apps/*", "crudl", "capabilities: create, read, update, delete, list",
-		"apps team: full control of the apps tree")
-	m = typeKeys(t, m, "h") // raw document
-	wantView(t, m, "path \"secret/data/apps/*\"", "capabilities = [")
+	m = typeKeys(t, m, "pgdown", "enter") // last policy: team-apps
+	wantView(t, m, "secret/data/apps/*", "c r u d l",
+		"capabilities: create, read, update, delete, list",
+		"apps team: full control of the apps tree",
+		"path \"secret/data/apps/*\" {")
+	m = typeKeys(t, m, "h") // raw document (comment markers only there)
+	wantView(t, m, "# apps team", "capabilities = [")
 	m = typeKeys(t, m, "h") // back to the structured view
-	wantView(t, m, "crudl")
+	wantView(t, m, "c r u d l")
+	m = typeKeys(t, m, "ctrl+l") // redraw keeps the view
+	wantView(t, m, "c r u d l")
+	m = typeKeys(t, m, "esc", "esc")
+	wantView(t, m, "Secret Engines")
+
+	// default policy: / filters the path list
+	m = openMenu(t, m, "ACL Policies")
+	m = typeKeys(t, m, "enter") // default (cursor at top)
+	m = typeKeys(t, m, "/", "r", "e", "n", "e", "w")
+	wantView(t, m, "auth/token/renew-self")
+	if strings.Contains(m.View(), "cubbyhole/") {
+		t.Errorf("filtered policy list still shows cubbyhole/\n---\n%s\n---", m.View())
+	}
+	m = typeKeys(t, m, "esc") // clear the filter
+	wantView(t, m, "cubbyhole/")
 	m = typeKeys(t, m, "esc", "esc")
 	wantView(t, m, "Secret Engines")
 

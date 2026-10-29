@@ -10,14 +10,15 @@ import (
 )
 
 // policyPath is one parsed `path` block of an ACL policy: the path
-// pattern, its lead comment lines, its capabilities, and any other
+// pattern, its lead comment lines, its capabilities, any other
 // attributes (allowed/denied parameters, wrapping TTLs, ...) in
-// document order.
+// document order, and the block's verbatim HCL source.
 type policyPath struct {
 	path     string
 	comments []string
 	caps     []string
 	attrs    []policyAttr
+	src      string
 }
 
 type policyAttr struct {
@@ -36,16 +37,34 @@ var capLetter = map[string]string{
 	"list": "l", "patch": "p", "sudo": "s", "deny": "x",
 }
 
-// capSummary renders a path block's capabilities as the dim inline
-// summary shown next to the path in the list.
-func capSummary(caps []string) string {
-	if len(caps) == 0 {
-		return "(no capabilities)"
+// policyCols returns the union of capabilities across the policy's
+// paths in canonical order: the fixed columns of the path list.
+func policyCols(paths []policyPath) []string {
+	var cols []string
+	for _, c := range capOrder {
+		for _, pp := range paths {
+			if containsStr(pp.caps, c) {
+				cols = append(cols, c)
+				break
+			}
+		}
 	}
+	return cols
+}
+
+// capColumns renders one row's capability columns: a letter in its
+// fixed column when granted, a dot otherwise, so capabilities line up
+// vertically across rows.
+func capColumns(caps, cols []string) string {
 	var b strings.Builder
-	for _, c := range sortCaps(caps) {
-		if l, ok := capLetter[c]; ok {
-			b.WriteString(l)
+	for i, c := range cols {
+		if i > 0 {
+			b.WriteString(" ")
+		}
+		if containsStr(caps, c) {
+			b.WriteString(capLetter[c])
+		} else {
+			b.WriteString(".")
 		}
 	}
 	return b.String()
@@ -111,6 +130,13 @@ func parsePolicyDoc(raw string) ([]policyPath, error) {
 		obj, ok := item.Val.(*ast.ObjectType)
 		if !ok {
 			return nil, fmt.Errorf("path %q: not a block", pp.path)
+		}
+		// Capture the block's verbatim source, from the first key to
+		// the closing brace, for the expansion's hcl section.
+		start := item.Keys[0].Token.Pos.Offset
+		end := obj.Rbrace.Offset + 1
+		if start >= 0 && end <= len(raw) && end > start {
+			pp.src = strings.TrimRight(raw[start:end], " \t")
 		}
 		for _, attr := range obj.List.Items {
 			if len(attr.Keys) == 0 {

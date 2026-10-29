@@ -67,6 +67,10 @@ func (p *enginesPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			if p.cur < len(vis)-1 {
 				p.cur++
 			}
+		case "pgup":
+			p.cur = pageJump(p.cur, max(p.h-3, 1), len(vis), false)
+		case "pgdown":
+			p.cur = pageJump(p.cur, max(p.h-3, 1), len(vis), true)
 		case "enter":
 			if p.cur < len(vis) {
 				return p, Push(newEngineDetailPage(p.cl, vis[p.cur]))
@@ -155,6 +159,8 @@ func (p *enginesPage) Hints() string {
 	return "up/down select  enter open engine  / filter  r refresh  esc back  q quit"
 }
 
+// window(cur, off, n, rows) scrolls a fixed-size window over n items
+// keeping cur visible.
 func window(cur, off, n, rows int) (int, int) {
 	if rows < 1 {
 		rows = 1
@@ -172,4 +178,19 @@ func window(cur, off, n, rows int) (int, int) {
 		off = 0
 	}
 	return cur, off
+}
+
+// pageJump moves cur by one page of rows, clamped to [0, n-1]; the
+// pgup/pgdown navigation of the list pages.
+func pageJump(cur, rows, n int, down bool) int {
+	if rows < 1 {
+		rows = 1
+	}
+	if n < 1 {
+		return 0
+	}
+	if down {
+		return min(cur+rows, n-1)
+	}
+	return max(cur-rows, 0)
 }

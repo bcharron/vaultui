@@ -72,6 +72,10 @@ func (p *policiesPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			if p.cur < len(vis)-1 {
 				p.cur++
 			}
+		case "pgup":
+			p.cur = pageJump(p.cur, max(p.h-3, 1), len(vis), false)
+		case "pgdown":
+			p.cur = pageJump(p.cur, max(p.h-3, 1), len(vis), true)
 		case "enter":
 			if p.cur < len(vis) {
 				return p, Push(newPolicyDetailPage(p.cl, vis[p.cur]))

@@ -335,7 +335,22 @@ func (p *engineDetailPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 			}
 		}
 		return p, nil
-	case "pgup", "pgdown", "home", "end", "g", "G":
+	case "pgup", "pgdown":
+		switch p.textTab() {
+		case 0:
+			p.vp, _ = p.vp.Update(msg)
+		case 1:
+			p.evp, _ = p.evp.Update(msg)
+		default:
+			down := msg.String() == "pgdown"
+			if p.isKV() {
+				p.ecur = pageJump(p.ecur, max(p.h-3, 1), len(evis), down)
+			} else if g != nil {
+				g.cur = pageJump(g.cur, max(p.h-3, 1), len(gvis), down)
+			}
+		}
+		return p, nil
+	case "home", "end", "g", "G":
 		switch p.textTab() {
 		case 0:
 			p.vp, _ = p.vp.Update(msg)

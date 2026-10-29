@@ -45,6 +45,10 @@ func (p *homePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			if p.cur < len(p.items)-1 {
 				p.cur++
 			}
+		case "pgup":
+			p.cur = pageJump(p.cur, max(p.h-4, 1), len(p.items), false)
+		case "pgdown":
+			p.cur = pageJump(p.cur, max(p.h-4, 1), len(p.items), true)
 		case "enter":
 			switch p.cur {
 			case 0:

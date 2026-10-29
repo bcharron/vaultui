@@ -2,6 +2,7 @@ package tui
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -34,11 +35,21 @@ path "transit/sign/jwt-signer" {
 	if paths[1].comments != nil {
 		t.Errorf("unexpected comments on second path: %v", paths[1].comments)
 	}
-	if got := capSummary(paths[0].caps); got != "crudl" {
-		t.Errorf("summary = %q, want crudl", got)
+	cols := policyCols(paths)
+	if got := capColumns(paths[0].caps, cols); got != "c r u d l" {
+		t.Errorf("columns = %q, want c r u d l", got)
 	}
-	if got := capSummary(paths[1].caps); got != "u" {
-		t.Errorf("summary = %q, want u", got)
+	if got := capColumns(paths[1].caps, cols); got != ". . u . ." {
+		t.Errorf("columns = %q, want . . u . .", got)
+	}
+	// each path's verbatim HCL block is captured
+	for _, pp := range paths {
+		if !strings.Contains(raw, pp.src) {
+			t.Errorf("src %q not part of the document", pp.src)
+		}
+		if !strings.HasPrefix(pp.src, "path ") || !strings.HasSuffix(pp.src, "}") {
+			t.Errorf("src %q is not the whole block", pp.src)
+		}
 	}
 }
 
@@ -59,8 +70,8 @@ path "secret/data/payments" {
 		t.Fatalf("got %d paths, want 1", len(paths))
 	}
 	pp := paths[0]
-	if got := capSummary(pp.caps); got != "ru" {
-		t.Errorf("summary = %q, want ru", got)
+	if got := capColumns(pp.caps, policyCols(paths)); got != "r u" {
+		t.Errorf("columns = %q, want r u", got)
 	}
 	if len(pp.attrs) != 3 {
 		t.Fatalf("got %d attrs, want 3: %+v", len(pp.attrs), pp.attrs)

@@ -154,6 +154,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c":
 			return a, tea.Quit
+		case "ctrl+l":
+			// full repaint, for when something else scribbled on the
+			// terminal or the display drifted
+			return a, tea.ClearScreen
 		case "q":
 			if !a.top().Typing() {
 				return a, tea.Quit

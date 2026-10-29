@@ -76,6 +76,10 @@ func (p *kvPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			if p.cur < len(vis)-1 {
 				p.cur++
 			}
+		case "pgup":
+			p.cur = pageJump(p.cur, max(p.h-4, 1), len(vis), false)
+		case "pgdown":
+			p.cur = pageJump(p.cur, max(p.h-4, 1), len(vis), true)
 		case "enter":
 			return p.enter()
 		case "v":

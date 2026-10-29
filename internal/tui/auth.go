@@ -69,6 +69,10 @@ func (p *authPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			if p.cur < len(vis)-1 {
 				p.cur++
 			}
+		case "pgup":
+			p.cur = pageJump(p.cur, max(p.h-3, 1), len(vis), false)
+		case "pgdown":
+			p.cur = pageJump(p.cur, max(p.h-3, 1), len(vis), true)
 		case "enter":
 			if p.cur < len(vis) {
 				return p, Push(newAuthDetailPage(p.cl, vis[p.cur]))
@@ -341,7 +345,14 @@ func (p *authDetailPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 			p.rcur++
 		}
 		return p, nil
-	case "pgup", "pgdown", "home", "end", "g", "G":
+	case "pgup", "pgdown":
+		if p.tab == 0 {
+			p.vp, _ = p.vp.Update(msg)
+			return p, nil
+		}
+		p.rcur = pageJump(p.rcur, max(p.h-3, 1), len(vis), msg.String() == "pgdown")
+		return p, nil
+	case "home", "end", "g", "G":
 		if p.tab == 0 {
 			p.vp, _ = p.vp.Update(msg)
 		}
