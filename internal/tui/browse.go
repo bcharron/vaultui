@@ -72,6 +72,7 @@ func cfgExpansionLines(name string, cfg *roleCfg) []string {
 	if cfg == nil {
 		return lines
 	}
+	lines = append(lines, "")
 	if cfg.loading {
 		return append(lines, dimStyle.Render("loading ..."))
 	}

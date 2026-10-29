@@ -348,7 +348,7 @@ func (p *authDetailPage) expansion(vis []engineRow) []string {
 	r := vis[p.cur]
 	area := expansionArea(p.h, min(p.rowsVisible(), max(len(vis)-p.off, 0)), p.filt.view() != "")
 	if r.kind == rowTune {
-		lines := []string{titleStyle.Render(engineTuneRowLabel)}
+		lines := []string{titleStyle.Render(engineTuneRowLabel), ""}
 		if p.cfgLoading {
 			lines = append(lines, dimStyle.Render("loading ..."))
 		} else {
@@ -357,7 +357,7 @@ func (p *authDetailPage) expansion(vis []engineRow) []string {
 		return truncateLines(lines, area)
 	}
 	what := strings.ToLower(authRoleTabLabel(p.m.Type))
-	lines := []string{titleStyle.Render(r.label)}
+	lines := []string{titleStyle.Render(r.label), ""}
 	switch {
 	case p.rolesLoading:
 		lines = append(lines, dimStyle.Render("loading "+what+" ..."))

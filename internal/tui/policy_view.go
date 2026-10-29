@@ -244,7 +244,7 @@ func (p *policyViewPage) expansion(vis []policyPath) []string {
 		return nil
 	}
 	pp := vis[p.cur]
-	lines := []string{titleStyle.Render(pp.path)}
+	lines := []string{titleStyle.Render(pp.path), ""}
 	for _, c := range pp.comments {
 		lines = append(lines, dimStyle.Render(c))
 	}

@@ -243,7 +243,7 @@ func (p *allPoliciesPage) expansion(vis []allPathRow) []string {
 	}
 	g := vis[p.cur]
 	var lines []string
-	lines = append(lines, selStyle.Render(g.policy)+"  "+dimStyle.Render(strings.Join(sortCaps(g.block.caps), ", ")))
+	lines = append(lines, selStyle.Render(g.policy)+"  "+dimStyle.Render(strings.Join(sortCaps(g.block.caps), ", ")), "")
 	for _, c := range g.block.comments {
 		lines = append(lines, dimStyle.Render(c))
 	}

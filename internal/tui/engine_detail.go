@@ -405,7 +405,7 @@ func (p *engineDetailPage) expansion(vis []engineRow) []string {
 	area := expansionArea(p.h, min(p.rowsVisible(), max(len(vis)-p.off, 0)), p.filt.view() != "")
 	switch r.kind {
 	case rowTune:
-		lines := []string{titleStyle.Render(engineTuneRowLabel)}
+		lines := []string{titleStyle.Render(engineTuneRowLabel), ""}
 		if p.cfgLoading {
 			lines = append(lines, dimStyle.Render("loading ..."))
 		} else {
@@ -413,7 +413,7 @@ func (p *engineDetailPage) expansion(vis []engineRow) []string {
 		}
 		return truncateLines(lines, area)
 	case rowEngineCfg:
-		lines := []string{titleStyle.Render(engineCfgRowLabel)}
+		lines := []string{titleStyle.Render(engineCfgRowLabel), ""}
 		if p.ecfgLoading || !p.ecfgFetched {
 			lines = append(lines, dimStyle.Render("loading ..."))
 		} else {
@@ -422,7 +422,7 @@ func (p *engineDetailPage) expansion(vis []engineRow) []string {
 		return truncateLines(lines, area)
 	default:
 		g := p.groupByEndpoint(r.ep)
-		lines := []string{titleStyle.Render(g.label)}
+		lines := []string{titleStyle.Render(g.label), ""}
 		switch {
 		case g.loading:
 			lines = append(lines, dimStyle.Render("loading ..."))
