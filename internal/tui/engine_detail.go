@@ -17,23 +17,39 @@ type engineDetailPage struct {
 	w, h int
 	tab  int
 
-	// Config tab
+	// Config tab (sys/mounts/{path}/tune)
 	cfgText    string
 	cfgLoading bool
 	cfgErr     error
 	vp         viewport.Model
 
-	// Roles tab
-	rolesLoading bool
-	rolesErr     error
-	roles        []string
-	rcur, roff   int
+	// Engine Config tab (aws config/root+lease, gcp config): shown only
+	// when the engine type has dedicated config endpoints.
+	ecfgEndpoints []string
+	ecfgLoading   bool
+	ecfgText      string
+	evp           viewport.Model
+
+	// Role group tabs (Roles, Keys, Rolesets, ...): one per group.
+	groups []roleGroupState
 
 	// Browse tab (KV engines)
 	entLoading bool
 	entErr     error
 	entries    []vault.KVEntry
 	ecur, eoff int
+}
+
+// roleGroupState is one role-like tab: a list of names with cursors and
+// optional inline annotations (e.g. the AWS credential type).
+type roleGroupState struct {
+	label    string
+	endpoint string
+	loading  bool
+	err      error
+	roles    []string
+	cur, off int
+	ann      map[string]string
 }
 
 type tuneLoadedMsg struct {
@@ -43,20 +59,46 @@ type tuneLoadedMsg struct {
 }
 
 type rolesLoadedMsg struct {
-	path  string
-	roles []string
-	err   error
+	path     string
+	endpoint string
+	roles    []string
+	err      error
+}
+
+type roleAnnMsg struct {
+	path     string
+	endpoint string
+	role     string
+	ann      string
+}
+
+type engineCfgLoadedMsg struct {
+	path string
+	text string
 }
 
 func newEngineDetailPage(cl *vaultapi.Client, m vault.Mount) *engineDetailPage {
-	return &engineDetailPage{
-		cl:           cl,
-		m:            m,
-		cfgLoading:   true,
-		rolesLoading: m.Type != "kv",
-		entLoading:   m.Type == "kv",
-		vp:           viewport.New(0, 0),
+	p := &engineDetailPage{
+		cl:            cl,
+		m:             m,
+		cfgLoading:    true,
+		ecfgEndpoints: vault.EngineConfigEndpoints(m.Type),
+		ecfgLoading:   len(vault.EngineConfigEndpoints(m.Type)) > 0,
+		vp:            viewport.New(0, 0),
+		evp:           viewport.New(0, 0),
+		entLoading:    m.Type == "kv",
 	}
+	if m.Type != "kv" {
+		for _, g := range vault.RoleGroups(m.Type) {
+			p.groups = append(p.groups, roleGroupState{
+				label:    g.Label,
+				endpoint: g.Endpoint,
+				loading:  true,
+				ann:      map[string]string{},
+			})
+		}
+	}
+	return p
 }
 
 func (p *engineDetailPage) Init() tea.Cmd {
@@ -67,10 +109,17 @@ func (p *engineDetailPage) Init() tea.Cmd {
 			return tuneLoadedMsg{path: m.Path, kv: kv, err: err}
 		},
 	}
-	if m.Type != "kv" {
+	for i := range p.groups {
+		g := p.groups[i]
 		cmds = append(cmds, func() tea.Msg {
-			roles, err := vault.ListRoles(cl, m.Path, vault.RoleListEndpoint(m.Type))
-			return rolesLoadedMsg{path: m.Path, roles: roles, err: err}
+			roles, err := vault.ListRoles(cl, m.Path, g.endpoint)
+			return rolesLoadedMsg{path: m.Path, endpoint: g.endpoint, roles: roles, err: err}
+		})
+	}
+	if p.ecfgLoading {
+		eps := p.ecfgEndpoints
+		cmds = append(cmds, func() tea.Msg {
+			return engineCfgLoadedMsg{path: m.Path, text: engineConfigDoc(cl, m.Path, eps)}
 		})
 	}
 	if m.Type == "kv" {
@@ -86,10 +135,78 @@ func (p *engineDetailPage) tabs() []string {
 	if p.m.Type == "kv" {
 		return []string{"Config", "Browse"}
 	}
-	if p.m.Type == "transit" {
-		return []string{"Config", "Keys"}
+	tabs := []string{"Config"}
+	if p.hasEngineConfig() {
+		tabs = append(tabs, "Engine Config")
 	}
-	return []string{"Config", "Roles"}
+	for _, g := range p.groups {
+		tabs = append(tabs, g.label)
+	}
+	return tabs
+}
+
+func (p *engineDetailPage) hasEngineConfig() bool { return len(p.ecfgEndpoints) > 0 }
+
+// groupTab returns the role group state for the active tab, or nil when
+// the active tab is not a role group.
+func (p *engineDetailPage) groupTab() *roleGroupState {
+	if p.m.Type == "kv" {
+		return nil
+	}
+	i := p.tab - 1
+	if p.hasEngineConfig() {
+		i--
+	}
+	if i < 0 || i >= len(p.groups) {
+		return nil
+	}
+	return &p.groups[i]
+}
+
+func (p *engineDetailPage) groupByEndpoint(endpoint string) *roleGroupState {
+	for i := range p.groups {
+		if p.groups[i].endpoint == endpoint {
+			return &p.groups[i]
+		}
+	}
+	return nil
+}
+
+// groupAnnotated reports whether roles in this group get an inline
+// annotation: the AWS credential type, the GCP roleset secret type.
+func (p *engineDetailPage) groupAnnotated(g *roleGroupState) bool {
+	switch {
+	case p.m.Type == "aws" && g.endpoint == "roles":
+		return true
+	case p.m.Type == "gcp" && g.endpoint == "roleset":
+		return true
+	}
+	return false
+}
+
+// loadRoleAnns reads each listed role's config (capped) so the group tab
+// can show its inline annotation.
+func (p *engineDetailPage) loadRoleAnns(g *roleGroupState) tea.Cmd {
+	if g.err != nil || !p.groupAnnotated(g) || len(g.roles) == 0 {
+		return nil
+	}
+	cl, m := p.cl, p.m
+	names := g.roles
+	if len(names) > 50 {
+		names = names[:50]
+	}
+	cmds := make([]tea.Cmd, 0, len(names))
+	for _, name := range names {
+		role, endpoint := name, g.endpoint
+		cmds = append(cmds, func() tea.Msg {
+			data, err := vault.ReadRole(cl, m.Path, endpoint, role)
+			if err != nil {
+				return roleAnnMsg{path: m.Path, endpoint: endpoint, role: role}
+			}
+			return roleAnnMsg{path: m.Path, endpoint: endpoint, role: role, ann: roleAnnotation(m.Type, data)}
+		})
+	}
+	return tea.Batch(cmds...)
 }
 
 func (p *engineDetailPage) Update(msg tea.Msg) (Page, tea.Cmd) {
@@ -107,13 +224,33 @@ func (p *engineDetailPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			p.cfgText = formatPairs(msg.kv)
 		}
 		p.layout()
+	case engineCfgLoadedMsg:
+		if msg.path != p.m.Path {
+			return p, nil
+		}
+		p.ecfgLoading = false
+		p.ecfgText = msg.text
+		p.layout()
 	case rolesLoadedMsg:
 		if msg.path != p.m.Path {
 			return p, nil
 		}
-		p.rolesLoading = false
-		p.rolesErr = msg.err
-		p.roles = msg.roles
+		g := p.groupByEndpoint(msg.endpoint)
+		if g == nil {
+			return p, nil
+		}
+		g.loading = false
+		g.err = msg.err
+		g.roles = msg.roles
+		g.cur, g.off = 0, 0
+		return p, p.loadRoleAnns(g)
+	case roleAnnMsg:
+		if msg.path != p.m.Path || msg.ann == "" {
+			return p, nil
+		}
+		if g := p.groupByEndpoint(msg.endpoint); g != nil {
+			g.ann[msg.role] = msg.ann
+		}
 	case kvEntriesLoadedMsg:
 		if msg.mount != p.m.Path || msg.sub != "" {
 			return p, nil
@@ -147,34 +284,43 @@ func (p *engineDetailPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 		np.layout()
 		return np, np.Init()
 	case "up", "k", "ctrl+k":
-		if p.tab == 0 {
+		switch p.textTab() {
+		case 0:
 			p.vp, _ = p.vp.Update(msg)
-			return p, nil
-		}
-		if p.isKV() {
-			if p.ecur > 0 {
-				p.ecur--
+		case 1:
+			p.evp, _ = p.evp.Update(msg)
+		default:
+			if p.isKV() {
+				if p.ecur > 0 {
+					p.ecur--
+				}
+			} else if g := p.groupTab(); g != nil && g.cur > 0 {
+				g.cur--
 			}
-		} else if p.rcur > 0 {
-			p.rcur--
 		}
 		return p, nil
 	case "down", "j":
-		if p.tab == 0 {
+		switch p.textTab() {
+		case 0:
 			p.vp, _ = p.vp.Update(msg)
-			return p, nil
-		}
-		if p.isKV() {
-			if p.ecur < len(p.entries)-1 {
-				p.ecur++
+		case 1:
+			p.evp, _ = p.evp.Update(msg)
+		default:
+			if p.isKV() {
+				if p.ecur < len(p.entries)-1 {
+					p.ecur++
+				}
+			} else if g := p.groupTab(); g != nil && g.cur < len(g.roles)-1 {
+				g.cur++
 			}
-		} else if p.rcur < len(p.roles)-1 {
-			p.rcur++
 		}
 		return p, nil
 	case "pgup", "pgdown", "home", "end", "g", "G":
-		if p.tab == 0 {
+		switch p.textTab() {
+		case 0:
 			p.vp, _ = p.vp.Update(msg)
+		case 1:
+			p.evp, _ = p.evp.Update(msg)
 		}
 		return p, nil
 	case "v":
@@ -188,14 +334,26 @@ func (p *engineDetailPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 	return p, nil
 }
 
+// textTab reports which scrollable text tab is active: 0 for the tune
+// Config tab, 1 for the Engine Config tab, -1 otherwise.
+func (p *engineDetailPage) textTab() int {
+	if p.tab == 0 {
+		return 0
+	}
+	if p.hasEngineConfig() && p.tab == 1 {
+		return 1
+	}
+	return -1
+}
+
 func (p *engineDetailPage) isKV() bool { return p.m.Type == "kv" }
 
 func (p *engineDetailPage) enter() (Page, tea.Cmd) {
 	cl, m := p.cl, p.m
-	if p.tab == 0 {
-		return p, nil
-	}
 	if p.isKV() {
+		if p.tab != 1 {
+			return p, nil
+		}
 		if p.ecur >= len(p.entries) {
 			return p, nil
 		}
@@ -214,15 +372,17 @@ func (p *engineDetailPage) enter() (Page, tea.Cmd) {
 			},
 		))
 	}
-	// Roles / Keys tab
-	if p.rcur >= len(p.roles) {
+	// Role group tab
+	g := p.groupTab()
+	if g == nil || g.cur >= len(g.roles) {
 		return p, nil
 	}
-	name := p.roles[p.rcur]
+	name := g.roles[g.cur]
+	endpoint, label := g.endpoint, g.label
 	dp := newDetailPage(
-		fmt.Sprintf("%s: %s", p.tabs()[1], name),
+		fmt.Sprintf("%s: %s", label, name),
 		func() (string, []pageLink, error) {
-			data, err := vault.ReadRole(cl, m.Path, vault.RoleListEndpoint(m.Type), name)
+			data, err := vault.ReadRole(cl, m.Path, endpoint, name)
 			if err != nil {
 				return "", nil, err
 			}
@@ -238,6 +398,9 @@ func (p *engineDetailPage) layout() {
 	p.vp.Width = p.w
 	p.vp.Height = p.h - 1 // below the tab bar
 	p.vp.SetContent(wrapText(p.cfgText, p.w))
+	p.evp.Width = p.w
+	p.evp.Height = p.h - 1
+	p.evp.SetContent(wrapText(p.ecfgText, p.w))
 }
 
 func (p *engineDetailPage) View() string {
@@ -247,10 +410,12 @@ func (p *engineDetailPage) View() string {
 	switch {
 	case p.tab == 0:
 		b.WriteString(p.viewConfig())
+	case p.hasEngineConfig() && p.tab == 1:
+		b.WriteString(p.viewEngineConfig())
 	case p.isKV():
 		b.WriteString(p.viewEntries())
 	default:
-		b.WriteString(p.viewRoles())
+		b.WriteString(p.viewGroup())
 	}
 	return b.String()
 }
@@ -281,27 +446,55 @@ func (p *engineDetailPage) viewConfig() string {
 	return p.vp.View()
 }
 
-func (p *engineDetailPage) viewRoles() string {
-	if p.rolesLoading {
-		return loadingStyle.Render("loading roles ...")
+func (p *engineDetailPage) viewEngineConfig() string {
+	if p.ecfgLoading {
+		return loadingStyle.Render("loading engine config ...")
 	}
-	if p.rolesErr != nil {
-		return errStyle.Render("error listing roles: " + p.rolesErr.Error())
+	if p.ecfgText == "" {
+		return dimStyle.Render("no engine config data returned")
 	}
-	if len(p.roles) == 0 {
-		return dimStyle.Render("no roles found")
+	return p.evp.View()
+}
+
+func (p *engineDetailPage) viewGroup() string {
+	g := p.groupTab()
+	if g == nil {
+		return dimStyle.Render("(nothing here)")
+	}
+	what := strings.ToLower(g.label)
+	if g.loading {
+		return loadingStyle.Render("loading " + what + " ...")
+	}
+	if g.err != nil {
+		return errStyle.Render("error listing " + what + ": " + g.err.Error())
+	}
+	if len(g.roles) == 0 {
+		return dimStyle.Render("no " + what + " found")
 	}
 	rows := p.h - 2
 	if rows < 1 {
 		rows = 1
 	}
-	p.rcur, p.roff = window(p.rcur, p.roff, len(p.roles), rows)
+	g.cur, g.off = window(g.cur, g.off, len(g.roles), rows)
+	padW := 0
+	for _, r := range g.roles {
+		if len(r) > padW {
+			padW = len(r)
+		}
+	}
+	padW += 2
 	var b strings.Builder
-	for i := p.roff; i < min(p.roff+rows, len(p.roles)); i++ {
-		if i == p.rcur {
-			b.WriteString(selStyle.Render("> "+p.roles[i]) + "\n")
+	for i := g.off; i < min(g.off+rows, len(g.roles)); i++ {
+		name := g.roles[i]
+		label := fmt.Sprintf("%-*s", padW, name)
+		ann := ""
+		if a := g.ann[name]; a != "" {
+			ann = dimStyle.Render("-> " + a)
+		}
+		if i == g.cur {
+			b.WriteString(selStyle.Render("> "+label) + ann + "\n")
 		} else {
-			b.WriteString(itemStyle.Render("  "+p.roles[i]) + "\n")
+			b.WriteString(itemStyle.Render("  "+label) + ann + "\n")
 		}
 	}
 	return strings.TrimRight(b.String(), "\n")
@@ -347,4 +540,26 @@ func (p *engineDetailPage) Typing() bool { return false }
 
 func (p *engineDetailPage) Hints() string {
 	return "left/right tabs  up/down select  enter open  v versions  r refresh  esc back  q quit"
+}
+
+// engineConfigDoc reads each engine config endpoint and renders them as
+// labeled sections of one document.
+func engineConfigDoc(cl *vaultapi.Client, mountPath string, endpoints []string) string {
+	var b strings.Builder
+	for i, ep := range endpoints {
+		if i > 0 {
+			b.WriteString("\n\n")
+		}
+		b.WriteString(dimStyle.Render("-- "+mountPath+ep+" --") + "\n")
+		data, err := vault.ReadEngineConfig(cl, mountPath+ep)
+		switch {
+		case err != nil:
+			b.WriteString(errStyle.Render("error: " + err.Error()))
+		case len(data) == 0:
+			b.WriteString(dimStyle.Render("(no data returned)"))
+		default:
+			b.WriteString(formatMap(data))
+		}
+	}
+	return strings.TrimRight(b.String(), "\n")
 }

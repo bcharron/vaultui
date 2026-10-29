@@ -32,8 +32,15 @@ Home
 ├── Secret Engines ........ list of mounts (path, type, description)
 │   └── Engine detail
 │       ├── Config ........ sys/mounts/{path}/tune (TTLs, options, ...)
+│       ├── Engine Config . engine-owned config (aws config/root and
+│       │                   config/lease, gcp config)
 │       ├── Roles ......... roles/keys per engine type (database, pki,
-│       │                   transit, aws, ...) with drill-in detail
+│       │                   transit, ...) with drill-in detail; AWS
+│       │                   adds a Static Roles tab, and AWS/GCP roles
+│       │                   show their credential/secret type inline
+│       ├── Rolesets ...... GCP splits role-like objects into Rolesets,
+│       │                   Static Accounts, and Impersonated Accounts
+│       │                   tabs
 │       └── Browse ........ KV v1/v2 key listing (KV engines)
 │           └── KV browser  directory tree navigation
 │               └── Secret  key/value data plus v2 metadata
@@ -66,11 +73,16 @@ data. vaultui is read-only: no page issues writes to Vault.
 ```sh
 # end-to-end test against a local dev Vault (skipped when absent):
 vault server -dev -dev-root-token-id=root -dev-listen-address=127.0.0.1:8200 &
+VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root scripts/dev-fixture.sh
 VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root go test ./...
 ```
 
 The test only runs against loopback addresses and skips otherwise, so
-`go test ./...` is safe on any machine.
+`go test ./...` is safe on any machine. `scripts/dev-fixture.sh` seeds
+the data the test expects (KV secrets and versions, transit keys, a PKI
+role, policies, a jwt auth login, identity entities and groups); it is
+idempotent and safe to re-run. The AWS and GCP engines and their sample
+roles are enabled by the test itself.
 
 ## Layout
 

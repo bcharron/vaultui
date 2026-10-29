@@ -90,6 +90,24 @@ func extractPolicies(m map[string]interface{}) []string {
 	return out
 }
 
+// roleAnnotation returns the short hint shown next to role names in a
+// role group tab: the AWS credential type, the GCP roleset secret type.
+func roleAnnotation(engineType string, m map[string]interface{}) string {
+	str := func(k string) string {
+		if s, ok := m[k].(string); ok {
+			return s
+		}
+		return ""
+	}
+	switch engineType {
+	case "aws":
+		return str("credential_type")
+	case "gcp":
+		return str("secret_type")
+	}
+	return ""
+}
+
 // secretDoc renders a KV secret's metadata (v2) and data sections.
 func secretDoc(data, meta map[string]interface{}) string {
 	var b strings.Builder

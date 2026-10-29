@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -158,6 +159,52 @@ func openMenu(t *testing.T, m tea.Model, item string) tea.Model {
 	return typeKeys(t, m, "enter")
 }
 
+// toHome pops the navigation stack until the home page is on top.
+func toHome(t *testing.T, m tea.Model) tea.Model {
+	t.Helper()
+	for i := 0; i < 15; i++ {
+		first := strings.SplitN(m.View(), "\n", 2)[0]
+		if strings.HasSuffix(first, "home") {
+			return m
+		}
+		m = typeKeys(t, m, "esc")
+	}
+	return m
+}
+
+// openEngine returns to home, opens the engines list, and opens the
+// given mount path. The cursor offset is computed from the live mount
+// list so extra mounts (e.g. those enabled by setupCloudEngines) cannot
+// shift navigation.
+func openEngine(t *testing.T, m tea.Model, cl *vaultapi.Client, path string) tea.Model {
+	t.Helper()
+	m = toHome(t, m)
+	m = openMenu(t, m, "Secret Engines")
+	mounts, err := cl.Sys().ListMounts()
+	if err != nil {
+		t.Fatalf("list mounts: %v", err)
+	}
+	paths := make([]string, 0, len(mounts))
+	for mp := range mounts {
+		paths = append(paths, mp)
+	}
+	sort.Strings(paths)
+	idx := -1
+	for i, mp := range paths {
+		if mp == path {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		t.Fatalf("mount %s not found in %v", path, paths)
+	}
+	for i := 0; i < idx; i++ {
+		m = typeKeys(t, m, "down")
+	}
+	return typeKeys(t, m, "enter")
+}
+
 func TestEndToEnd(t *testing.T) {
 	cl := testVault(t)
 	m := tea.Model(New(cl))
@@ -167,10 +214,8 @@ func TestEndToEnd(t *testing.T) {
 	m = openMenu(t, m, "Secret Engines")
 	wantView(t, m, "secret/", "legacy/", "transit/", "pki/", "cubbyhole/")
 
-	// Engines sorted: cubbyhole(0) identity(1) legacy(2) pki(3) secret(4) sys(5) transit(6)
-
 	// KV v2: secret/ -> detail (Config/Browse), browse into apps/api
-	m = typeKeys(t, m, "down", "down", "down", "down", "enter")
+	m = openEngine(t, m, cl, "secret/")
 	wantView(t, m, "[Config]", "Browse")
 	m = typeKeys(t, m, "right")
 	wantView(t, m, "apps/", "db/")
@@ -182,8 +227,7 @@ func TestEndToEnd(t *testing.T) {
 	wantView(t, m, "Secret Engines")
 
 	// KV v1: legacy/
-	m = openMenu(t, m, "Secret Engines")
-	m = typeKeys(t, m, "down", "down", "enter")
+	m = openEngine(t, m, cl, "legacy/")
 	wantView(t, m, "[Config]", "Browse")
 	m = typeKeys(t, m, "right")
 	wantView(t, m, "creds", "misc")
@@ -192,8 +236,7 @@ func TestEndToEnd(t *testing.T) {
 	m = typeKeys(t, m, "esc", "esc", "esc", "esc")
 
 	// Transit keys
-	m = openMenu(t, m, "Secret Engines")
-	m = typeKeys(t, m, "down", "down", "down", "down", "down", "down", "enter")
+	m = openEngine(t, m, cl, "transit/")
 	wantView(t, m, "[Config]", "Keys")
 	m = typeKeys(t, m, "right")
 	wantView(t, m, "aesguy", "eddy")
@@ -202,8 +245,7 @@ func TestEndToEnd(t *testing.T) {
 	m = typeKeys(t, m, "esc", "esc", "esc")
 
 	// PKI roles
-	m = openMenu(t, m, "Secret Engines")
-	m = typeKeys(t, m, "down", "down", "down", "enter")
+	m = openEngine(t, m, cl, "pki/")
 	wantView(t, m, "[Config]", "Roles")
 	m = typeKeys(t, m, "right")
 	wantView(t, m, "testrole")
@@ -248,11 +290,10 @@ func TestEndToEnd(t *testing.T) {
 	m = typeKeys(t, m, "esc")
 
 	// KV v2 version history: apps/api has two versions
-	m = openMenu(t, m, "Secret Engines")
-	m = typeKeys(t, m, "down", "down", "down", "down", "enter") // secret/ engine detail
-	m = typeKeys(t, m, "right")                                 // browse tab
-	m = typeKeys(t, m, "enter")                                 // into apps/
-	m = typeKeys(t, m, "v")                                     // versions of api (cursor on api)
+	m = openEngine(t, m, cl, "secret/")
+	m = typeKeys(t, m, "right") // browse tab
+	m = typeKeys(t, m, "enter") // into apps/
+	m = typeKeys(t, m, "v")     // versions of api (cursor on api)
 	wantView(t, m, "v2", "v1", "current")
 	m = typeKeys(t, m, "down", "enter") // view version 1
 	wantView(t, m, "version: 1", "db_host: db01.internal")
@@ -279,4 +320,62 @@ func TestEndToEnd(t *testing.T) {
 	wantView(t, m, "[Groups]", "apps-team")
 	m = typeKeys(t, m, "enter")
 	wantView(t, m, "linked policies:", "[1] jwt-signer", "member_entity_ids:")
+
+	// AWS + GCP engines: dedicated tabs and inline role annotations
+	setupCloudEngines(t, cl)
+
+	// AWS: engine detail with Engine Config, Roles, Static Roles tabs
+	m = openEngine(t, m, cl, "aws/")
+	wantView(t, m, "[Config]", "Engine Config", "Roles", "Static Roles")
+	m = typeKeys(t, m, "right") // Engine Config
+	wantView(t, m, "aws/config/root", "aws/config/lease")
+	m = typeKeys(t, m, "right") // Roles
+	wantView(t, m, "deploy", "s3reader", "-> iam_user", "-> assumed_role")
+	m = typeKeys(t, m, "enter") // role detail
+	wantView(t, m, "credential_type: iam_user")
+	m = typeKeys(t, m, "esc")
+	m = typeKeys(t, m, "right") // Static Roles (none without live AWS creds)
+	wantView(t, m, "no static roles found")
+	m = typeKeys(t, m, "esc", "esc")
+
+	// GCP: engine detail with roleset and account tabs
+	m = openEngine(t, m, cl, "gcp/")
+	wantView(t, m, "[Config]", "Engine Config", "Rolesets", "Static Accounts", "Impersonated Accounts")
+	m = typeKeys(t, m, "right") // Engine Config
+	wantView(t, m, "gcp/config")
+	m = typeKeys(t, m, "right") // Rolesets (none without live GCP creds)
+	wantView(t, m, "no rolesets found")
+}
+
+// setupCloudEngines enables the aws and gcp engines on the dev vault
+// and writes AWS roles. AWS role definitions are pure configuration (no
+// AWS calls), so they can be created without live credentials; AWS
+// static roles and GCP rolesets validate against the cloud and stay
+// empty here.
+func setupCloudEngines(t *testing.T, cl *vaultapi.Client) {
+	t.Helper()
+	mounts, err := cl.Sys().ListMounts()
+	if err != nil {
+		t.Fatalf("list mounts: %v", err)
+	}
+	ensure := func(path, typ string) {
+		if _, ok := mounts[path]; ok {
+			return
+		}
+		if err := cl.Sys().Mount(path, &vaultapi.MountInput{Type: typ}); err != nil {
+			t.Fatalf("enable %s: %v", path, err)
+		}
+	}
+	ensure("aws/", "aws")
+	ensure("gcp/", "gcp")
+	write := func(path string, data map[string]interface{}) {
+		if _, err := cl.Logical().Write(path, data); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+	write("aws/roles/deploy", map[string]interface{}{"credential_type": "iam_user"})
+	write("aws/roles/s3reader", map[string]interface{}{
+		"credential_type": "assumed_role",
+		"role_arns":       "arn:aws:iam::123456789012:role/s3reader",
+	})
 }

@@ -14,7 +14,6 @@ var roleEndpoints = map[string]string{
 	"database":      "roles",
 	"pki":           "roles",
 	"aws":           "roles",
-	"gcp":           "roles",
 	"azure":         "roles",
 	"consul":        "roles",
 	"nomad":         "roles",
@@ -67,6 +66,36 @@ func RoleListEndpoint(engineType string) string {
 		return ep
 	}
 	return "roles"
+}
+
+// RoleGroup is one listable group of role-like objects under a secret
+// engine mount: roles, keys, rolesets, accounts, ...
+type RoleGroup struct {
+	Label    string
+	Endpoint string
+}
+
+// RoleGroups returns the role groups an engine type exposes, in tab
+// order. Most engines expose a single group; AWS adds static roles and
+// GCP splits its role-like objects across rolesets and accounts.
+func RoleGroups(engineType string) []RoleGroup {
+	switch engineType {
+	case "transit":
+		return []RoleGroup{{Label: "Keys", Endpoint: "keys"}}
+	case "aws":
+		return []RoleGroup{
+			{Label: "Roles", Endpoint: "roles"},
+			{Label: "Static Roles", Endpoint: "static-roles"},
+		}
+	case "gcp":
+		return []RoleGroup{
+			{Label: "Rolesets", Endpoint: "roleset"},
+			{Label: "Static Accounts", Endpoint: "static-account"},
+			{Label: "Impersonated Accounts", Endpoint: "impersonated-account"},
+		}
+	default:
+		return []RoleGroup{{Label: "Roles", Endpoint: RoleListEndpoint(engineType)}}
+	}
 }
 
 // ListRoles lists role (or key, or user) names under a mount at the given

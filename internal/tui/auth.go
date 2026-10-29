@@ -149,6 +149,7 @@ type authDetailPage struct {
 	roles        []string
 	rcur, roff   int
 	rolePol      map[string][]string
+	roleEndpoint string // full list endpoint, to filter role messages
 }
 
 type rolePoliciesMsg struct {
@@ -171,12 +172,14 @@ func newAuthDetailPage(cl *vaultapi.Client, m vault.Mount) *authDetailPage {
 		cfgLoading:   true,
 		rolesLoading: true,
 		rolePol:      map[string][]string{},
+		roleEndpoint: "auth/" + m.Path + vault.AuthRoleListEndpoint(m.Type),
 		vp:           viewport.New(0, 0),
 	}
 }
 
 func (p *authDetailPage) Init() tea.Cmd {
 	cl, m := p.cl, p.m
+	endpoint := p.roleEndpoint
 	return tea.Batch(
 		func() tea.Msg {
 			kv, err := vault.AuthTune(cl, m.Path)
@@ -184,7 +187,7 @@ func (p *authDetailPage) Init() tea.Cmd {
 		},
 		func() tea.Msg {
 			roles, err := vault.ListRoles(cl, "auth/"+m.Path, vault.AuthRoleListEndpoint(m.Type))
-			return rolesLoadedMsg{path: m.Path, roles: roles, err: err}
+			return rolesLoadedMsg{path: m.Path, endpoint: endpoint, roles: roles, err: err}
 		},
 	)
 }
@@ -232,7 +235,7 @@ func (p *authDetailPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		}
 		p.layout()
 	case rolesLoadedMsg:
-		if msg.path != p.m.Path {
+		if msg.path != p.m.Path || msg.endpoint != p.roleEndpoint {
 			return p, nil
 		}
 		p.rolesLoading = false
