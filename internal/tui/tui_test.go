@@ -211,6 +211,38 @@ func openEngine(t *testing.T, m tea.Model, cl *vaultapi.Client, path string) tea
 	return typeKeys(t, m, "enter")
 }
 
+// openAuth returns to home, opens the auth methods list, and opens the
+// given auth mount path. The cursor offset is computed from the live
+// auth list so extra enabled methods cannot shift navigation.
+func openAuth(t *testing.T, m tea.Model, cl *vaultapi.Client, path string) tea.Model {
+	t.Helper()
+	m = toHome(t, m)
+	m = openMenu(t, m, "Auth Methods")
+	auths, err := cl.Sys().ListAuth()
+	if err != nil {
+		t.Fatalf("list auth: %v", err)
+	}
+	paths := make([]string, 0, len(auths))
+	for ap := range auths {
+		paths = append(paths, ap)
+	}
+	sort.Strings(paths)
+	idx := -1
+	for i, ap := range paths {
+		if ap == path {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		t.Fatalf("auth mount %s not found in %v", path, paths)
+	}
+	for i := 0; i < idx; i++ {
+		m = typeKeys(t, m, "down")
+	}
+	return typeKeys(t, m, "enter")
+}
+
 func TestEndToEnd(t *testing.T) {
 	cl := testVault(t)
 	m := tea.Model(New(cl))
@@ -256,9 +288,14 @@ func TestEndToEnd(t *testing.T) {
 	wantView(t, m, "aes256-gcm96")
 	m = typeKeys(t, m, "esc", "esc", "esc", "esc") // doc -> keys -> engine -> engines -> home
 
-	// PKI roles
+	// PKI: the engine page lists config rows plus the roles group
 	m = openEngine(t, m, cl, "pki/")
-	wantView(t, m, "Config (tune)", "Roles")
+	wantView(t, m, "Config (tune)", "Engine Config", "Roles")
+	m = typeKeys(t, m, "down") // the Engine Config row's expansion shows the doc
+	wantView(t, m, "pki/config/urls")
+	m = typeKeys(t, m, "enter") // the full document
+	wantView(t, m, "pki/config/cluster")
+	m = typeKeys(t, m, "esc")
 	m = typeKeys(t, m, "down", "enter") // the Roles row opens its own screen
 	wantView(t, m, "testrole")
 	m = typeKeys(t, m, "enter")
@@ -337,13 +374,19 @@ func TestEndToEnd(t *testing.T) {
 	wantView(t, m, "team-apps")
 	m = typeKeys(t, m, "esc", "esc")
 
-	// Reset the persistent home cursor, then auth methods: jwt roles
+	// Reset the persistent home cursor, then auth methods: jwt config
+	// and roles
 	m = openMenu(t, m, "Auth Methods")
 	wantView(t, m, "jwt/", "token/")
-	m = typeKeys(t, m, "enter") // jwt/ sorts before token/
-	wantView(t, m, "Config (tune)", "Roles")
+	m = openAuth(t, m, cl, "jwt/") // extra enabled auth methods cannot shift navigation
+	wantView(t, m, "Config (tune)", "Auth Config", "Roles")
+	m = typeKeys(t, m, "down") // the Auth Config row's expansion shows the doc
+	wantView(t, m, "auth/jwt/config")
+	m = typeKeys(t, m, "enter") // the full document
+	wantView(t, m, "bound_issuer", "jwks_url")
+	m = typeKeys(t, m, "esc")
 	m = typeKeys(t, m, "down", "enter")                                                  // the Roles row opens its own screen
-	wantView(t, m, "demo-service", "service-reader", "policies: jwt-signer, jwt-reader") // the expansion fetched the highlighted role
+	wantView(t, m, "demo-service", "service-reader", "policies: jwt-reader, jwt-signer") // the expansion fetched the highlighted role (Vault returns policies sorted)
 	// on a tall terminal the two-row list leaves the pane room for
 	// the whole summary: no elision while space remains
 	m = drive(t, m, tea.WindowSizeMsg{Width: 120, Height: 60})
@@ -352,8 +395,8 @@ func TestEndToEnd(t *testing.T) {
 	}
 	m = drive(t, m, tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = typeKeys(t, m, "enter") // read role demo-service (cursor on it)
-	wantView(t, m, "linked policies:", "[1] jwt-signer", "[2] jwt-reader", "token_policies: jwt-signer, jwt-reader", "bound_audiences: demo-services")
-	m = typeKeys(t, m, "1") // jump straight to the linked policy
+	wantView(t, m, "linked policies:", "[1] jwt-reader", "[2] jwt-signer", "token_policies: jwt-reader, jwt-signer", "bound_audiences: demo-services")
+	m = typeKeys(t, m, "2") // jump straight to the linked policy jwt-signer
 	wantView(t, m, "policy: jwt-signer", "transit/sign/jwt-signer", "capabilities")
 	m = typeKeys(t, m, "esc", "esc", "esc", "esc", "esc") // policy -> role -> roles -> auth detail -> auth list -> home
 	wantView(t, m, "Secret Engines")

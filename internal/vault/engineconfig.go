@@ -14,8 +14,14 @@ func EngineConfigEndpoints(engineType string) []string {
 	switch engineType {
 	case "aws":
 		return []string{"config/root", "config/lease"}
-	case "gcp":
+	case "gcp", "azure", "kubernetes", "openldap":
 		return []string{"config"}
+	case "consul", "nomad":
+		return []string{"config/access", "config/lease"}
+	case "rabbitmq":
+		return []string{"config/connection", "config/lease"}
+	case "pki":
+		return []string{"config/urls", "config/cluster"}
 	}
 	return nil
 }
@@ -27,8 +33,10 @@ func EngineConfigEndpoints(engineType string) []string {
 // dedicated config endpoints.
 func AuthConfigEndpoints(authType string) []string {
 	switch authType {
-	case "jwt", "oidc", "kubernetes", "azure", "gcp", "oci", "saml", "ldap", "okta":
+	case "jwt", "oidc", "kubernetes", "azure", "gcp", "oci", "saml", "ldap", "okta", "cf", "radius":
 		return []string{"config"}
+	case "kerberos":
+		return []string{"config", "config/ldap"}
 	case "cert":
 		return []string{"config", "crl/config"}
 	case "aws":
