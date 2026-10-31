@@ -3,6 +3,12 @@
 # Run against a fresh loopback dev vault:
 #   vault server -dev -dev-root-token-id=root -dev-listen-address=127.0.0.1:8200 &
 #   VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root scripts/dev-fixture.sh
+# Beyond the e2e fixture this also enables every engine and auth method
+# with a dedicated config endpoint (aws, gcp, azure, kubernetes, consul,
+# nomad, rabbitmq, openldap, ssh; approle, cf, kerberos, radius) so the
+# TUI's config rows can be exercised. Configs needing a live backing
+# service (azure, kubernetes, openldap, ssh, cf, kerberos, radius,
+# rabbitmq connections) stay unconfigured and show "(no data returned)".
 set -e
 export VAULT_ADDR=${VAULT_ADDR:-http://127.0.0.1:8200}
 export VAULT_TOKEN=${VAULT_TOKEN:-root}
@@ -23,6 +29,50 @@ vault write -f transit/keys/eddy type=ed25519
 
 vault secrets enable pki
 vault write pki/roles/testrole allowed_domains=test.local allow_subdomains=true max_ttl=72h
+
+# AWS: root and lease configs plus the roles the e2e test expects. The
+# credentials are placeholders; skip_iam_verification keeps the write
+# offline.
+vault secrets enable aws
+vault write aws/config/root access_key=AKIAFAKEEXAMPLE secret_key=placeholder \
+  skip_iam_verification=true region=us-east-1
+vault write aws/config/lease lease=5m lease_max=20m
+vault write aws/roles/deploy credential_type=iam_user
+vault write aws/roles/s3reader credential_type=assumed_role \
+  role_arns=arn:aws:iam::123456789012:role/s3reader
+
+# GCP: config with a throwaway service-account key so the config row
+# has data to show.
+vault secrets enable gcp
+openssl genrsa -out /tmp/gcp-key.pem 2048 2>/dev/null
+python3 - <<'PYEOF' > /tmp/gcp-sa.json
+import json
+sa = {
+    "type": "service_account",
+    "project_id": "dev-fixture",
+    "private_key_id": "fakekeyid123",
+    "private_key": open("/tmp/gcp-key.pem").read(),
+    "client_email": "vault-dev@dev-fixture.iam.gserviceaccount.com",
+    "client_id": "123456789",
+}
+print(json.dumps(sa))
+PYEOF
+vault write gcp/config credentials=@/tmp/gcp-sa.json
+
+# The remaining config-endpoint engines. Consul and nomad tokens are
+# dummies accepted without contacting the backing service; azure and
+# kubernetes return defaults; the rest stay unconfigured.
+vault secrets enable azure
+vault secrets enable kubernetes
+vault secrets enable consul
+vault write consul/config/access token=dummy-consul-token
+vault secrets enable nomad
+vault write nomad/config/access token=dummy-nomad-token
+vault write nomad/config/lease lease=5m lease_max=20m
+vault secrets enable rabbitmq
+vault write rabbitmq/config/lease lease=5m lease_max=20m
+vault secrets enable openldap
+vault secrets enable ssh
 
 cat > /tmp/team-apps.hcl <<'EOF'
 # apps team: full control of the apps tree
@@ -73,6 +123,15 @@ print(header + "." + payload + "." + b64(sig))
 PYEOF
 )
 vault write auth/jwt/login role=demo-service jwt="$JWT" >/dev/null
+
+# Approle has no config endpoint but gets a role for the Roles screen;
+# cf, kerberos and radius have config endpoints that need live backing
+# services to configure, so they stay empty.
+vault auth enable approle
+vault write auth/approle/role/demo token_policies=team-apps token_ttl=30m
+vault auth enable cf
+vault auth enable kerberos
+vault auth enable radius
 
 BOB_ID=$(vault write -format=json identity/entity name=bob \
   policies=jwt-signer,jwt-reader metadata=email=bob@example.com \
