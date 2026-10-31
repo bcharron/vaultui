@@ -134,16 +134,21 @@ func TestFlattenAllPaths(t *testing.T) {
 			},
 		},
 	}
-	rows, cols := flattenAllPaths(entries)
+	failed := []failedPolicy{
+		{name: "topsecret", fail: policyReadError{reason: "permission denied"}},
+		{name: "root", fail: policyReadError{reason: "permission denied"}},
+	}
+	rows, cols := flattenAllPaths(entries, failed)
 	// one row per grant, sorted by path then policy: the shared path
-	// appears once per granting policy
+	// appears once per granting policy; unreadable policies trail as
+	// error rows, sorted by name
 	want := []struct{ path, policy string }{
 		{"secret/data/apps/*", "jwt-reader"},
 		{"secret/data/apps/*", "team-apps"},
 		{"transit/verify/jwt-signer", "jwt-reader"},
 	}
-	if len(rows) != len(want) {
-		t.Fatalf("got %d rows, want %d", len(rows), len(want))
+	if len(rows) != len(want)+len(failed) {
+		t.Fatalf("got %d rows, want %d", len(rows), len(want)+len(failed))
 	}
 	for i, w := range want {
 		if rows[i].block.path != w.path || rows[i].policy != w.policy {
@@ -152,5 +157,16 @@ func TestFlattenAllPaths(t *testing.T) {
 	}
 	if got := capColumns(rows[1].block.caps, cols); got != "c r u d l" {
 		t.Errorf("columns = %q, want c r u d l", got)
+	}
+	// error rows come last, sorted by policy name, carrying the read
+	// error for the row and its expansion
+	for i, f := range []failedPolicy{
+		{name: "root", fail: policyReadError{reason: "permission denied"}},
+		{name: "topsecret", fail: policyReadError{reason: "permission denied"}},
+	} {
+		r := rows[len(want)+i]
+		if r.fail == nil || r.fail.reason != f.fail.reason || r.policy != f.name || r.block.path != "" {
+			t.Errorf("error row %d = (%q, %q, %+v), want policy %q with reason %q", i, r.block.path, r.policy, r.fail, f.name, f.fail.reason)
+		}
 	}
 }

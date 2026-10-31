@@ -179,7 +179,7 @@ func (p *policyViewPage) View() string {
 		return loadingStyle.Render("loading policy ...")
 	}
 	if p.err != nil {
-		return errStyle.Render("error: " + p.err.Error())
+		return errStyle.Render("error: " + policyReadReason(p.err))
 	}
 	if p.structured() {
 		return p.listView()
