@@ -80,6 +80,7 @@ type engineRow struct {
 const (
 	engineTuneRowLabel = "Config (tune)"
 	engineCfgRowLabel  = "Engine Config"
+	authCfgRowLabel    = "Auth Config"
 )
 
 func newEngineDetailPage(cl *vaultapi.Client, m vault.Mount) *engineDetailPage {

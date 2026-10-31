@@ -118,6 +118,16 @@ type authDetailPage struct {
 	cfgLoading bool
 	cfgText    string
 
+	// acfgEndpoints are the auth method's own config endpoints (jwt
+	// config, cert config+crl/config, aws config/root, ...); non-empty
+	// only for auth types that have them, and shown as a second
+	// synthetic row whose expansion shows the rendered document,
+	// fetched lazily when the row is first selected.
+	acfgEndpoints []string
+	acfgFetched   bool
+	acfgLoading   bool
+	acfgText      string
+
 	rolesLoading bool
 	rolesErr     error
 	roles        []string
@@ -134,11 +144,12 @@ type authTuneLoadedMsg struct {
 
 func newAuthDetailPage(cl *vaultapi.Client, m vault.Mount) *authDetailPage {
 	return &authDetailPage{
-		cl:           cl,
-		m:            m,
-		cfgLoading:   true,
-		rolesLoading: true,
-		roleEndpoint: vault.AuthRoleListEndpoint(m.Type),
+		cl:            cl,
+		m:             m,
+		cfgLoading:    true,
+		acfgEndpoints: vault.AuthConfigEndpoints(m.Type),
+		rolesLoading:  true,
+		roleEndpoint:  vault.AuthRoleListEndpoint(m.Type),
 	}
 }
 
@@ -168,6 +179,12 @@ func (p *authDetailPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		if msg.err == nil {
 			p.cfgText = formatPairs(msg.kv)
 		}
+	case engineCfgLoadedMsg:
+		if msg.path != p.m.Path {
+			return p, nil
+		}
+		p.acfgLoading = false
+		p.acfgText = msg.text
 	case rolesLoadedMsg:
 		if msg.path != p.m.Path || msg.endpoint != p.roleEndpoint {
 			return p, nil
@@ -212,18 +229,35 @@ func (p *authDetailPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 	case "enter":
 		if p.cur < len(vis) {
 			if cmd := p.enter(vis[p.cur]); cmd != nil {
-				return p, cmd
+				return p, tea.Batch(cmd, p.ensureAcfg())
 			}
 		}
 	}
-	return p, nil
+	return p, p.ensureAcfg()
 }
 
-// enter opens the selected row: the tune config document, or the
-// roles' own list screen.
+// ensureAcfg fetches the auth method's own config once, when its row is
+// first selected: the expansion pane's preview costs one request per
+// auth method, only if it is ever inspected.
+func (p *authDetailPage) ensureAcfg() tea.Cmd {
+	vis := p.visible()
+	if p.cur >= len(vis) || vis[p.cur].kind != rowEngineCfg || p.acfgFetched {
+		return nil
+	}
+	p.acfgFetched = true
+	p.acfgLoading = true
+	cl, m, eps := p.cl, p.m, p.acfgEndpoints
+	return func() tea.Msg {
+		return engineCfgLoadedMsg{path: m.Path, text: engineConfigDoc(cl, "auth/"+m.Path, eps)}
+	}
+}
+
+// enter opens the selected row: both config rows push their document;
+// the roles row pushes the roles' own list screen.
 func (p *authDetailPage) enter(r engineRow) tea.Cmd {
 	cl, m := p.cl, p.m
-	if r.kind == rowTune {
+	switch r.kind {
+	case rowTune:
 		return Push(newDetailPage(
 			fmt.Sprintf("config: auth/%s", strings.TrimSuffix(m.Path, "/")),
 			func() (string, []pageLink, error) {
@@ -234,18 +268,28 @@ func (p *authDetailPage) enter(r engineRow) tea.Cmd {
 				return formatPairs(kv), nil, nil
 			},
 		))
+	case rowEngineCfg:
+		eps := p.acfgEndpoints
+		return Push(newDetailPage(
+			fmt.Sprintf("auth config: auth/%s", strings.TrimSuffix(m.Path, "/")),
+			func() (string, []pageLink, error) {
+				return engineConfigDoc(cl, "auth/"+m.Path, eps), nil, nil
+			},
+		))
 	}
 	label := authRoleTabLabel(m.Type)
 	crumb := fmt.Sprintf("auth / %s / %s", strings.TrimSuffix(m.Path, "/"), strings.ToLower(label))
 	return Push(newRoleListPage(cl, "auth/"+m.Path, p.roleEndpoint, label, crumb))
 }
 
-// rows is the page's fixed row list: the tune config and the roles.
+// rows is the page's fixed row list: the tune config, the method's own
+// config (when its type has one), and the roles.
 func (p *authDetailPage) rows() []engineRow {
-	return []engineRow{
-		{kind: rowTune, label: engineTuneRowLabel},
-		{kind: rowGroup, label: authRoleTabLabel(p.m.Type)},
+	rows := []engineRow{{kind: rowTune, label: engineTuneRowLabel}}
+	if len(p.acfgEndpoints) > 0 {
+		rows = append(rows, engineRow{kind: rowEngineCfg, label: authCfgRowLabel})
 	}
+	return append(rows, engineRow{kind: rowGroup, label: authRoleTabLabel(p.m.Type)})
 }
 
 // visible returns the rows matching the filter. The roles row matches
@@ -340,19 +384,29 @@ func (p *authDetailPage) rolesNote() string {
 }
 
 // expansion renders the selected row's summary below the rule: the
-// tune pairs, or the roles row's item names.
+// tune pairs, the method's own config document, or the roles row's
+// item names.
 func (p *authDetailPage) expansion(vis []engineRow) []string {
 	if p.cur >= len(vis) {
 		return nil
 	}
 	r := vis[p.cur]
 	area := expansionArea(p.h, min(p.rowsVisible(), max(len(vis)-p.off, 0)), p.filt.view() != "")
-	if r.kind == rowTune {
+	switch r.kind {
+	case rowTune:
 		lines := []string{titleStyle.Render(engineTuneRowLabel), ""}
 		if p.cfgLoading {
 			lines = append(lines, dimStyle.Render("loading ..."))
 		} else {
 			lines = append(lines, strings.Split(p.cfgText, "\n")...)
+		}
+		return truncateLines(lines, area)
+	case rowEngineCfg:
+		lines := []string{titleStyle.Render(authCfgRowLabel), ""}
+		if p.acfgLoading || !p.acfgFetched {
+			lines = append(lines, dimStyle.Render("loading ..."))
+		} else {
+			lines = append(lines, strings.Split(p.acfgText, "\n")...)
 		}
 		return truncateLines(lines, area)
 	}
@@ -380,7 +434,7 @@ func (p *authDetailPage) Header() string {
 
 func (p *authDetailPage) Typing() bool { return p.filt.typing() }
 
-func (p *authDetailPage) Loading() bool { return p.cfgLoading || p.rolesLoading }
+func (p *authDetailPage) Loading() bool { return p.cfgLoading || p.acfgLoading || p.rolesLoading }
 
 func (p *authDetailPage) Hints() string {
 	return "up/down select  enter open  / filter  r refresh  esc back  ctrl+l redraw  q quit"
