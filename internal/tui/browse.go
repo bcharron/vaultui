@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -97,8 +98,11 @@ func cfgExpansionLines(name string, cfg *roleCfg) []string {
 }
 
 // newRoleDetailPage builds the full-document page for one role-like
-// item, with its linked policies as cross-reference links.
+// item, with its linked policies as cross-reference links. AppRole
+// roles also list the secret-ids issued for the role.
 func newRoleDetailPage(cl *vaultapi.Client, mountPath, endpoint, label, name string) *detailPage {
+	readCmd := "vault read " + mountPath + endpoint + "/" + name
+	approle := strings.HasPrefix(mountPath, "auth/approle/") && endpoint == "role"
 	dp := newDetailPage(
 		fmt.Sprintf("%s: %s", label, name),
 		func() (string, []pageLink, error) {
@@ -106,11 +110,38 @@ func newRoleDetailPage(cl *vaultapi.Client, mountPath, endpoint, label, name str
 			if err != nil {
 				return "", nil, err
 			}
-			return formatMap(data), policyLinks(cl, extractPolicies(data)), nil
+			doc := formatMap(data)
+			if approle {
+				sids, err := vault.ListAppRoleSecretIDs(cl, name)
+				if err != nil {
+					return "", nil, err
+				}
+				doc += "\n\n" + approleSecretIDsDoc(mountPath, name, sids)
+			}
+			return doc, policyLinks(cl, extractPolicies(data)), nil
 		},
 	)
+	dp.readCmd = readCmd
 	dp.linkTitle = "linked policies"
 	return dp
+}
+
+// approleSecretIDsDoc renders an AppRole role's issued secret-id list
+// as a labeled section, with the list endpoint in its header so the
+// data can be gathered manually.
+func approleSecretIDsDoc(mountPath, name string, ids []string) string {
+	var b strings.Builder
+	b.WriteString(dimStyle.Render("-- "+mountPath+"role/"+name+"/secret-id --") + "\n")
+	switch {
+	case len(ids) == 0:
+		b.WriteString(dimStyle.Render("(no secret-ids issued)"))
+	default:
+		for _, id := range ids {
+			b.WriteString(valStyle.Render(id) + "\n")
+		}
+		b.WriteString(dimStyle.Render(fmt.Sprintf("(%d issued)", len(ids))))
+	}
+	return b.String()
 }
 
 // roleListPage shows one role group's items (transit keys, PKI roles,
@@ -311,11 +342,15 @@ func (p *roleListPage) Hints() string {
 }
 
 // cfgValue renders one config value for the expansion pane: scalars
-// and plain lists inline; nested structures collapse to a placeholder
-// (the full document shows them properly).
+// and plain lists inline; flat maps (e.g. a group's alias) render as
+// inline k=v pairs; nested structures collapse to a placeholder (the
+// full document shows them properly).
 func cfgValue(v interface{}) string {
 	switch tv := v.(type) {
 	case map[string]interface{}:
+		if s, ok := inlineMap(tv); ok {
+			return dimStyle.Render(s)
+		}
 		return dimStyle.Render("(object)")
 	case []interface{}:
 		if hasMapElem(tv) {
@@ -325,4 +360,38 @@ func cfgValue(v interface{}) string {
 	default:
 		return styledValue(v)
 	}
+}
+
+// inlineMap renders a shallow map of scalars as "k=v, k=v" pairs, with
+// a present name field first (the identity group alias preview). It
+// reports false for maps with nested values, which stay collapsed.
+func inlineMap(m map[string]interface{}) (string, bool) {
+	parts := make([]string, 0, len(m))
+	if name, ok := m["name"].(string); ok && name != "" {
+		parts = append(parts, "name="+name)
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		if k != "name" {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		var s string
+		switch tv := m[k].(type) {
+		case nil:
+			s = "null"
+		case bool:
+			s = strconv.FormatBool(tv)
+		case float64:
+			s = strconv.FormatFloat(tv, 'f', -1, 64)
+		case string:
+			s = tv
+		default:
+			return "", false
+		}
+		parts = append(parts, k+"="+s)
+	}
+	return strings.Join(parts, ", "), true
 }

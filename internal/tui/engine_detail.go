@@ -68,6 +68,7 @@ const (
 	rowTune engineRowKind = iota
 	rowEngineCfg
 	rowGroup
+	rowAliases
 )
 
 // engineRow is one row of the engine page's list.
@@ -251,7 +252,7 @@ func (p *engineDetailPage) enter(r engineRow) tea.Cmd {
 	cl, m := p.cl, p.m
 	switch r.kind {
 	case rowTune:
-		return Push(newDetailPage(
+		dp := newDetailPage(
 			fmt.Sprintf("config: %s", strings.TrimSuffix(m.Path, "/")),
 			func() (string, []pageLink, error) {
 				kv, err := vault.Tune(cl, m.Path)
@@ -260,15 +261,21 @@ func (p *engineDetailPage) enter(r engineRow) tea.Cmd {
 				}
 				return formatPairs(kv), nil, nil
 			},
-		))
+		)
+		dp.readCmd = "vault read sys/mounts/" + m.Path + "tune"
+		return Push(dp)
 	case rowEngineCfg:
 		eps := p.ecfgEndpoints
-		return Push(newDetailPage(
+		dp := newDetailPage(
 			fmt.Sprintf("engine config: %s", strings.TrimSuffix(m.Path, "/")),
 			func() (string, []pageLink, error) {
 				return engineConfigDoc(cl, m.Path, eps), nil, nil
 			},
-		))
+		)
+		if len(eps) == 1 {
+			dp.readCmd = "vault read " + m.Path + eps[0]
+		}
+		return Push(dp)
 	case rowGroup:
 		if p.isKV() {
 			// the Keys row opens the KV browser

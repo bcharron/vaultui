@@ -56,7 +56,7 @@ func newLeasesPage(cl *vaultapi.Client, prefix string) *leasesPage {
 		}
 		leaseID := p.prefix + e.Name
 		cl := p.cl
-		return Push(newDetailPage(
+		dp := newDetailPage(
 			"lease: "+leaseID,
 			func() (string, []pageLink, error) {
 				data, err := vault.LookupLease(cl, leaseID)
@@ -65,7 +65,9 @@ func newLeasesPage(cl *vaultapi.Client, prefix string) *leasesPage {
 				}
 				return formatMap(data), nil, nil
 			},
-		))
+		)
+		dp.readCmd = "vault lease lookup " + leaseID
+		return Push(dp)
 	}
 	p.reload = p.Init
 	p.top = func() string { return dirStyle.Render("/" + p.prefix) }

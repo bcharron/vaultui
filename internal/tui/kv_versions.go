@@ -80,7 +80,7 @@ func newKVVersionsPage(cl *vaultapi.Client, m vault.Mount, sub string) *kvVersio
 	}
 	p.onEnter = func(v kvVersion) tea.Cmd {
 		cl, m, sub := p.cl, p.m, p.sub
-		return Push(newDetailPage(
+		dp := newDetailPage(
 			fmt.Sprintf("secret: %s%s (v%d)", m.Path, sub, v.num),
 			func() (string, []pageLink, error) {
 				data, meta, err := vault.ReadKV(cl, m, sub, v.num)
@@ -89,7 +89,9 @@ func newKVVersionsPage(cl *vaultapi.Client, m vault.Mount, sub string) *kvVersio
 				}
 				return secretDoc(data, meta), nil, nil
 			},
-		))
+		)
+		dp.readCmd = fmt.Sprintf("vault read %sdata/%s?version=%d", m.Path, sub, v.num)
+		return Push(dp)
 	}
 	p.reload = p.Init
 	p.top = func() string { return dirStyle.Render(p.m.Path + p.sub) }

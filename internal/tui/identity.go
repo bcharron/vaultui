@@ -367,11 +367,11 @@ func (p *identityListPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 func (p *identityListPage) open(name string) Page {
 	cl, kind := p.cl, p.kind
 	if kind == "entities" {
-		return identityDetail(cl, "entity: "+name, func() (map[string]interface{}, error) {
+		return identityDetail(cl, "entity: "+name, "identity/entity/name/"+name, func() (map[string]interface{}, error) {
 			return vault.ReadEntity(cl, name)
 		})
 	}
-	return identityDetail(cl, "group: "+name, func() (map[string]interface{}, error) {
+	return identityDetail(cl, "group: "+name, "identity/group/name/"+name, func() (map[string]interface{}, error) {
 		return vault.ReadGroup(cl, name)
 	})
 }
@@ -461,7 +461,7 @@ func (p *identityListPage) View() string {
 	}
 
 	b.WriteString(hRule(p.w) + "\n")
-	for _, l := range truncateLines(cfgExpansionLines(vis[p.cur], p.cfgs[p.kind+"/"+vis[p.cur]]), expansionArea(p.h, shown, fl != "")) {
+	for _, l := range truncateLines(identityExpansionLines(vis[p.cur], p.cfgs[p.kind+"/"+vis[p.cur]]), expansionArea(p.h, shown, fl != "")) {
 		b.WriteString(l + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
@@ -479,7 +479,7 @@ func (p *identityListPage) Hints() string {
 
 // identityDetail builds a detail page for an entity/group, wiring its
 // policies as navigable links.
-func identityDetail(cl *vaultapi.Client, title string, read func() (map[string]interface{}, error)) Page {
+func identityDetail(cl *vaultapi.Client, title, readPath string, read func() (map[string]interface{}, error)) Page {
 	dp := newDetailPage(
 		title,
 		func() (string, []pageLink, error) {
@@ -490,6 +490,42 @@ func identityDetail(cl *vaultapi.Client, title string, read func() (map[string]i
 			return formatMap(data), policyLinks(cl, extractPolicies(data)), nil
 		},
 	)
+	dp.readCmd = "vault read " + readPath
 	dp.linkTitle = "linked policies"
 	return dp
+}
+
+// identityExpansionLines renders an entity/group preview for the
+// expansion pane: the policies it grants, then its fields with nested
+// structures (aliases, metadata, ...) expanded as indented sections,
+// like the full document. Unlike role previews, identity items are
+// small enough that expanding them loses nothing.
+func identityExpansionLines(name string, cfg *roleCfg) []string {
+	lines := []string{titleStyle.Render(name)}
+	if cfg == nil {
+		return lines
+	}
+	lines = append(lines, "")
+	if cfg.loading {
+		return append(lines, dimStyle.Render("loading ..."))
+	}
+	if cfg.err != nil {
+		return append(lines, dimStyle.Render("error: "+cfg.err.Error()))
+	}
+	if pols := extractPolicies(cfg.data); len(pols) > 0 {
+		lines = append(lines, keyStyle.Render("policies: ")+valStyle.Render(strings.Join(pols, ", ")))
+	}
+	data := make(map[string]interface{}, len(cfg.data))
+	for k, v := range cfg.data {
+		if k == "policies" || k == "token_policies" {
+			continue
+		}
+		data[k] = v
+	}
+	var b strings.Builder
+	writeMap(&b, data, "")
+	if s := strings.TrimRight(b.String(), "\n"); s != "" {
+		lines = append(lines, strings.Split(s, "\n")...)
+	}
+	return lines
 }

@@ -129,6 +129,10 @@ vault write auth/jwt/login role=demo-service jwt="$JWT" >/dev/null
 # services to configure, so they stay empty.
 vault auth enable approle
 vault write auth/approle/role/demo token_policies=team-apps token_ttl=30m
+
+# Issue a secret-id for the approle role so the secrets list has data.
+vault write -f auth/approle/role/demo/secret-id >/dev/null
+
 vault auth enable cf
 vault auth enable kerberos
 vault auth enable radius
@@ -140,5 +144,16 @@ SVC_ID=$(vault write -format=json identity/entity name=service-a \
   policies=jwt-reader | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')
 vault write identity/group name=apps-team type=internal \
   policies=jwt-signer member_entity_ids="$BOB_ID,$SVC_ID"
+
+# An external group aliased to the jwt auth method, so the group alias
+# features have data: the Groups preview shows the alias inline and the
+# auth method view can list its accessor's aliases.
+JWT_ACCESSOR=$(vault auth list -format=json \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["jwt/"]["accessor"])')
+EXT_GROUP_ID=$(vault write -format=json identity/group name=eng-external \
+  type=external policies=jwt-reader \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')
+vault write identity/group-alias name=eng-admin \
+  mount_accessor="$JWT_ACCESSOR" canonical_id="$EXT_GROUP_ID"
 
 echo "fixture setup complete"

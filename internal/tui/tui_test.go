@@ -263,7 +263,8 @@ func TestEndToEnd(t *testing.T) {
 	m = typeKeys(t, m, "enter") // into apps/
 	wantView(t, m, "api", "web")
 	m = typeKeys(t, m, "enter") // read secret apps/api (cursor on api)
-	wantView(t, m, "version: 2", "db_port: 5433", "notes: rotated port", "-- metadata --", "-- data --")
+	wantView(t, m, "version: 2", "db_port: 5433", "notes: rotated port", "-- metadata --", "-- data --",
+		"vault read secret/data/apps/api")
 	m = typeKeys(t, m, "esc", "esc", "esc", "esc", "esc") // doc -> apps -> root -> engine -> engines -> home
 	wantView(t, m, "Secret Engines")
 
@@ -395,10 +396,36 @@ func TestEndToEnd(t *testing.T) {
 	}
 	m = drive(t, m, tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = typeKeys(t, m, "enter") // read role demo-service (cursor on it)
-	wantView(t, m, "linked policies:", "[1] jwt-reader", "[2] jwt-signer", "token_policies: jwt-reader, jwt-signer", "bound_audiences: demo-services")
+	wantView(t, m, "linked policies:", "[1] jwt-reader", "[2] jwt-signer", "token_policies: jwt-reader, jwt-signer",
+		"bound_audiences: demo-services", "vault read auth/jwt/role/demo-service")
 	m = typeKeys(t, m, "2") // jump straight to the linked policy jwt-signer
-	wantView(t, m, "policy: jwt-signer", "transit/sign/jwt-signer", "capabilities")
-	m = typeKeys(t, m, "esc", "esc", "esc", "esc", "esc") // policy -> role -> roles -> auth detail -> auth list -> home
+	wantView(t, m, "policy: jwt-signer", "transit/sign/jwt-signer", "capabilities",
+		"vault read sys/policies/acl/jwt-signer")
+	m = typeKeys(t, m, "esc", "esc", "esc", "esc", "esc", "esc") // policy -> role -> roles -> auth detail -> auth list -> home
+	wantView(t, m, "Secret Engines")
+
+	// jwt: the Group Aliases row lists the aliases on the accessor
+	m = openAuth(t, m, cl, "jwt/")
+	wantView(t, m, "Config (tune)", "Auth Config", "Roles", "Group Aliases")
+	m = typeKeys(t, m, "down", "down", "down") // the Group Aliases row; the expansion fetches them
+	wantView(t, m, "eng-admin")
+	m = typeKeys(t, m, "enter") // the aliases document
+	wantView(t, m, "group aliases: auth/jwt", "identity/group-alias/id/", "eng-admin", "canonical_id:")
+	m = typeKeys(t, m, "esc", "esc") // doc -> auth detail -> auth list
+
+	// AppRole: the role document lists the secret-ids issued for it
+	m = openAuth(t, m, cl, "approle/")
+	wantView(t, m, "Config (tune)", "Roles", "Group Aliases")
+	m = typeKeys(t, m, "down", "enter") // the Roles row opens its own screen
+	wantView(t, m, "demo")
+	m = typeKeys(t, m, "enter") // the role document
+	wantView(t, m, "vault read auth/approle/role/demo",
+		"-- auth/approle/role/demo/secret-id --", "issued)")
+	m = typeKeys(t, m, "esc")  // back to the roles screen
+	m = typeKeys(t, m, "esc")  // back to the auth detail
+	m = typeKeys(t, m, "down") // the Group Aliases row: the approle accessor has none
+	wantView(t, m, "Group Aliases  (none)")
+	m = typeKeys(t, m, "esc", "esc") // auth detail -> auth list -> home
 	wantView(t, m, "Secret Engines")
 
 	// Token info + capabilities check
@@ -441,14 +468,24 @@ func TestEndToEnd(t *testing.T) {
 	wantView(t, m, "Entities", "Groups", "bob", "service-a")               // the preview of the highlighted row
 	m = typeKeys(t, m, "enter")                                            // the Entities row opens its own screen
 	wantView(t, m, "bob", "service-a", "policies: jwt-reader, jwt-signer") // the expansion fetched the highlighted entity
-	m = typeKeys(t, m, "enter")                                            // bob
+	m = typeKeys(t, m, "down")                                             // the jwt-login entity: its aliases expand inline
+	wantView(t, m, "aliases:", "name: user-123", "role: demo-service")
+	m = typeKeys(t, m, "up")    // back to bob
+	m = typeKeys(t, m, "enter") // bob
 	wantView(t, m, "linked policies:", "[1] jwt-reader", "[2] jwt-signer", "email: bob@example.com")
 	m = typeKeys(t, m, "esc")           // back to the entities screen
 	m = typeKeys(t, m, "esc")           // back to the identity page
 	m = typeKeys(t, m, "down", "enter") // the Groups row opens its own screen
 	wantView(t, m, "apps-team")
 	m = typeKeys(t, m, "enter")
-	wantView(t, m, "linked policies:", "[1] jwt-signer", "member_entity_ids:")
+	wantView(t, m, "linked policies:", "[1] jwt-signer", "member_entity_ids:",
+		"vault read identity/group/name/apps-team")
+	m = typeKeys(t, m, "esc")  // back to the groups screen
+	m = typeKeys(t, m, "down") // eng-external; its alias object expands inline
+	wantView(t, m, "alias:", "name: eng-admin", "mount_path: auth/jwt/")
+	m = typeKeys(t, m, "enter") // the group document
+	wantView(t, m, "vault read identity/group/name/eng-external", "eng-admin")
+	m = typeKeys(t, m, "esc", "esc", "esc") // group -> groups -> identity -> home
 
 	// AWS + GCP engines: config rows and per-group screens
 	setupCloudEngines(t, cl)

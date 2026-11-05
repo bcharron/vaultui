@@ -44,8 +44,13 @@ func policyLinks(cl *vaultapi.Client, pols []string) []pageLink {
 // config, a policy) loaded asynchronously by its loader function, with
 // optional numbered cross-reference links.
 type detailPage struct {
-	id        int64
-	title     string
+	id    int64
+	title string
+	// readCmd is the command line shown above the document, so the
+	// data can be gathered manually ("vault read transit/keys/eddy",
+	// "vault lease lookup auth/..."); empty when there is no single
+	// backing request.
+	readCmd   string
 	loader    func() (string, []pageLink, error)
 	linkTitle string
 	loading   bool
@@ -103,12 +108,21 @@ func (p *detailPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 
 func (p *detailPage) layout() {
 	p.vp.Width = p.w
-	h := p.h - p.linksHeight()
+	h := p.h - p.linksHeight() - p.readCmdHeight()
 	if h < 1 {
 		h = 1
 	}
 	p.vp.Height = h
 	p.vp.SetContent(wrapText(p.content, p.w))
+}
+
+// readCmdHeight is the vertical space the read-command hint occupies:
+// one line plus a blank separator, or zero.
+func (p *detailPage) readCmdHeight() int {
+	if p.readCmd == "" {
+		return 0
+	}
+	return 2
 }
 
 // linksHeight is the vertical space the links section occupies: one line
@@ -128,6 +142,9 @@ func (p *detailPage) View() string {
 		return errStyle.Render("error: " + p.err.Error())
 	}
 	var b strings.Builder
+	if p.readCmd != "" {
+		b.WriteString(dimStyle.Render(p.readCmd) + "\n\n")
+	}
 	if len(p.links) > 0 {
 		title := p.linkTitle
 		if title == "" {

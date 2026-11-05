@@ -32,6 +32,12 @@ func ListAuthMounts(c *api.Client) ([]Mount, error) {
 	return out, nil
 }
 
+// ListAppRoleSecretIDs returns the accessors of the secret-ids issued
+// for one AppRole role (auth/approle/role/<name>/secret-id), sorted.
+func ListAppRoleSecretIDs(c *api.Client, roleName string) ([]string, error) {
+	return listKeys(c, "auth/approle/role/"+roleName+"/secret-id")
+}
+
 // AuthTune returns the tune configuration of an auth method
 // (endpoint sys/auth/{path}/tune) as sorted key/value pairs.
 func AuthTune(c *api.Client, authPath string) ([]KV, error) {

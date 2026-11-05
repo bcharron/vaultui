@@ -50,7 +50,11 @@ func newKVPage(cl *vaultapi.Client, m vault.Mount, sub string) *kvPage {
 			return Push(newKVPage(p.cl, p.m, p.sub+e.Name))
 		}
 		cl, m, sub, name := p.cl, p.m, p.sub, e.Name
-		return Push(newDetailPage(
+		readCmd := "vault read " + m.Path + sub + name
+		if m.KVVersion == 2 {
+			readCmd = "vault read " + m.Path + "data/" + sub + name
+		}
+		dp := newDetailPage(
 			"secret: "+m.Path+sub+name,
 			func() (string, []pageLink, error) {
 				data, meta, err := vault.ReadKV(cl, m, sub+name, 0)
@@ -59,7 +63,9 @@ func newKVPage(cl *vaultapi.Client, m vault.Mount, sub string) *kvPage {
 				}
 				return secretDoc(data, meta), nil, nil
 			},
-		))
+		)
+		dp.readCmd = readCmd
+		return Push(dp)
 	}
 	// "v" opens the selected secret's version history.
 	p.onKey = func(key string) (tea.Cmd, bool) {

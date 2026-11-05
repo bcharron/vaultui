@@ -133,7 +133,23 @@ type authDetailPage struct {
 	roles        []string
 	roleEndpoint string
 
+	// aliases are the identity group aliases assigned to the method's
+	// accessor; they are fetched lazily, when the Aliases row is first
+	// selected (listing costs one request per alias in the vault).
+	aliasesFetched bool
+	aliasesLoading bool
+	aliasesErr     error
+	aliases        []vault.GroupAlias
+
 	cur, off int
+}
+
+// aliasesLoadedMsg delivers the group aliases of one auth method,
+// fetched by accessor from the identity store.
+type aliasesLoadedMsg struct {
+	accessor string
+	aliases  []vault.GroupAlias
+	err      error
 }
 
 type authTuneLoadedMsg struct {
@@ -192,6 +208,13 @@ func (p *authDetailPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		p.rolesLoading = false
 		p.rolesErr = msg.err
 		p.roles = msg.roles
+	case aliasesLoadedMsg:
+		if msg.accessor != p.m.Accessor {
+			return p, nil
+		}
+		p.aliasesLoading = false
+		p.aliasesErr = msg.err
+		p.aliases = msg.aliases
 	case tea.KeyMsg:
 		return p.updateKeys(msg)
 	}
@@ -229,11 +252,28 @@ func (p *authDetailPage) updateKeys(msg tea.KeyMsg) (Page, tea.Cmd) {
 	case "enter":
 		if p.cur < len(vis) {
 			if cmd := p.enter(vis[p.cur]); cmd != nil {
-				return p, tea.Batch(cmd, p.ensureAcfg())
+				return p, tea.Batch(cmd, p.ensureAcfg(), p.ensureAliases())
 			}
 		}
 	}
-	return p, p.ensureAcfg()
+	return p, tea.Batch(p.ensureAcfg(), p.ensureAliases())
+}
+
+// ensureAliases fetches the method's group aliases once, when the
+// Aliases row is first selected: listing costs one request per alias
+// in the vault, so it is only paid if the row is ever inspected.
+func (p *authDetailPage) ensureAliases() tea.Cmd {
+	vis := p.visible()
+	if p.cur >= len(vis) || vis[p.cur].kind != rowAliases || p.aliasesFetched {
+		return nil
+	}
+	p.aliasesFetched = true
+	p.aliasesLoading = true
+	cl, acc := p.cl, p.m.Accessor
+	return func() tea.Msg {
+		aliases, err := vault.ListGroupAliasesByAccessor(cl, acc)
+		return aliasesLoadedMsg{accessor: acc, aliases: aliases, err: err}
+	}
 }
 
 // ensureAcfg fetches the auth method's own config once, when its row is
@@ -253,12 +293,13 @@ func (p *authDetailPage) ensureAcfg() tea.Cmd {
 }
 
 // enter opens the selected row: both config rows push their document;
-// the roles row pushes the roles' own list screen.
+// the roles row pushes the roles' own list screen; the aliases row
+// pushes the group-alias document.
 func (p *authDetailPage) enter(r engineRow) tea.Cmd {
 	cl, m := p.cl, p.m
 	switch r.kind {
 	case rowTune:
-		return Push(newDetailPage(
+		dp := newDetailPage(
 			fmt.Sprintf("config: auth/%s", strings.TrimSuffix(m.Path, "/")),
 			func() (string, []pageLink, error) {
 				kv, err := vault.AuthTune(cl, m.Path)
@@ -267,15 +308,33 @@ func (p *authDetailPage) enter(r engineRow) tea.Cmd {
 				}
 				return formatPairs(kv), nil, nil
 			},
-		))
+		)
+		dp.readCmd = "vault read sys/auth/" + m.Path + "tune"
+		return Push(dp)
 	case rowEngineCfg:
 		eps := p.acfgEndpoints
-		return Push(newDetailPage(
+		dp := newDetailPage(
 			fmt.Sprintf("auth config: auth/%s", strings.TrimSuffix(m.Path, "/")),
 			func() (string, []pageLink, error) {
 				return engineConfigDoc(cl, "auth/"+m.Path, eps), nil, nil
 			},
-		))
+		)
+		if len(eps) == 1 {
+			dp.readCmd = "vault read auth/" + m.Path + eps[0]
+		}
+		return Push(dp)
+	case rowAliases:
+		dp := newDetailPage(
+			fmt.Sprintf("group aliases: auth/%s", strings.TrimSuffix(m.Path, "/")),
+			func() (string, []pageLink, error) {
+				aliases, err := vault.ListGroupAliasesByAccessor(cl, m.Accessor)
+				if err != nil {
+					return "", nil, err
+				}
+				return groupAliasesDoc(aliases), nil, nil
+			},
+		)
+		return Push(dp)
 	}
 	label := authRoleTabLabel(m.Type)
 	crumb := fmt.Sprintf("auth / %s / %s", strings.TrimSuffix(m.Path, "/"), strings.ToLower(label))
@@ -283,18 +342,23 @@ func (p *authDetailPage) enter(r engineRow) tea.Cmd {
 }
 
 // rows is the page's fixed row list: the tune config, the method's own
-// config (when its type has one), and the roles.
+// config (when its type has one), the roles, and the group aliases
+// assigned to the method's accessor.
 func (p *authDetailPage) rows() []engineRow {
 	rows := []engineRow{{kind: rowTune, label: engineTuneRowLabel}}
 	if len(p.acfgEndpoints) > 0 {
 		rows = append(rows, engineRow{kind: rowEngineCfg, label: authCfgRowLabel})
 	}
-	return append(rows, engineRow{kind: rowGroup, label: authRoleTabLabel(p.m.Type)})
+	rows = append(rows,
+		engineRow{kind: rowGroup, label: authRoleTabLabel(p.m.Type)},
+		engineRow{kind: rowAliases, label: "Group Aliases"},
+	)
+	return rows
 }
 
-// visible returns the rows matching the filter. The roles row matches
-// on its label or on any role name, so filtering for a role keeps the
-// row reachable.
+// visible returns the rows matching the filter. The roles and aliases
+// rows match on their label or on any item name, so filtering for a
+// role keeps the row reachable.
 func (p *authDetailPage) visible() []engineRow {
 	if p.filt.empty() {
 		return p.rows()
@@ -305,9 +369,17 @@ func (p *authDetailPage) visible() []engineRow {
 			out = append(out, r)
 			continue
 		}
-		if r.kind == rowGroup {
+		switch r.kind {
+		case rowGroup:
 			for _, name := range p.roles {
 				if p.filt.match(name) {
+					out = append(out, r)
+					break
+				}
+			}
+		case rowAliases:
+			for _, a := range p.aliases {
+				if p.filt.match(a.Name) {
 					out = append(out, r)
 					break
 				}
@@ -356,15 +428,21 @@ func (p *authDetailPage) View() string {
 }
 
 func (p *authDetailPage) rowPlain(r engineRow) string {
-	if r.kind == rowGroup {
+	switch r.kind {
+	case rowGroup:
 		return r.label + p.rolesNote()
+	case rowAliases:
+		return r.label + p.aliasesNote()
 	}
 	return r.label
 }
 
 func (p *authDetailPage) rowText(r engineRow) string {
-	if r.kind == rowGroup {
+	switch r.kind {
+	case rowGroup:
 		return itemStyle.Render(r.label) + dimStyle.Render(p.rolesNote())
+	case rowAliases:
+		return itemStyle.Render(r.label) + dimStyle.Render(p.aliasesNote())
 	}
 	return itemStyle.Render(r.label)
 }
@@ -381,6 +459,22 @@ func (p *authDetailPage) rolesNote() string {
 		return "  (none)"
 	}
 	return fmt.Sprintf("  %d", len(p.roles))
+}
+
+// aliasesNote is the dim suffix of the aliases row: nothing before the
+// aliases are first fetched, then its loading state or alias count.
+func (p *authDetailPage) aliasesNote() string {
+	switch {
+	case !p.aliasesFetched:
+		return ""
+	case p.aliasesLoading:
+		return "  ..."
+	case p.aliasesErr != nil:
+		return "  (error)"
+	case len(p.aliases) == 0:
+		return "  (none)"
+	}
+	return fmt.Sprintf("  %d", len(p.aliases))
 }
 
 // expansion renders the selected row's summary below the rule: the
@@ -410,6 +504,23 @@ func (p *authDetailPage) expansion(vis []engineRow) []string {
 		}
 		return truncateLines(lines, area)
 	}
+	if r.kind == rowAliases {
+		lines := []string{titleStyle.Render(r.label), ""}
+		switch {
+		case !p.aliasesFetched || p.aliasesLoading:
+			lines = append(lines, dimStyle.Render("loading ..."))
+		case p.aliasesErr != nil:
+			lines = append(lines, dimStyle.Render("error: "+p.aliasesErr.Error()))
+		default:
+			for _, a := range p.aliases {
+				lines = append(lines, "  "+itemStyle.Render(a.Name))
+			}
+			if len(p.aliases) == 0 {
+				lines = append(lines, dimStyle.Render("(none)"))
+			}
+		}
+		return truncateLines(lines, area)
+	}
 	what := strings.ToLower(authRoleTabLabel(p.m.Type))
 	lines := []string{titleStyle.Render(r.label), ""}
 	switch {
@@ -434,8 +545,28 @@ func (p *authDetailPage) Header() string {
 
 func (p *authDetailPage) Typing() bool { return p.filt.typing() }
 
-func (p *authDetailPage) Loading() bool { return p.cfgLoading || p.acfgLoading || p.rolesLoading }
+func (p *authDetailPage) Loading() bool {
+	return p.cfgLoading || p.acfgLoading || p.rolesLoading || p.aliasesLoading
+}
 
 func (p *authDetailPage) Hints() string {
 	return "up/down select  enter open  / filter  r refresh  esc back  ctrl+l redraw  q quit"
+}
+
+// groupAliasesDoc renders the group aliases assigned to an auth
+// method's accessor: one labeled section per alias, with its read path
+// in the header so the data can be gathered manually.
+func groupAliasesDoc(aliases []vault.GroupAlias) string {
+	if len(aliases) == 0 {
+		return "(no group aliases on this accessor)"
+	}
+	var b strings.Builder
+	for i, a := range aliases {
+		if i > 0 {
+			b.WriteString("\n\n")
+		}
+		fmt.Fprintf(&b, "%s\n", dimStyle.Render("-- identity/group-alias/id/"+a.ID+" --"))
+		b.WriteString(formatMap(a.Data))
+	}
+	return b.String()
 }

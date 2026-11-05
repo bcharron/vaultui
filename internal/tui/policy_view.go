@@ -162,6 +162,12 @@ func (p *policyViewPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 	return p, nil
 }
 
+// readCmdLine is the dim command line shown with the document, so the
+// data can be gathered manually.
+func (p *policyViewPage) readCmdLine() string {
+	return dimStyle.Render("vault read sys/policies/acl/" + p.name)
+}
+
 // layout recomputes the raw viewport; it is shown for the raw toggle
 // and whenever the document did not parse as path rules.
 func (p *policyViewPage) layout() {
@@ -170,6 +176,9 @@ func (p *policyViewPage) layout() {
 	content := p.raw
 	if !p.parseOK && p.err == nil {
 		content = dimStyle.Render("(not parseable as path rules; showing the raw policy)") + "\n\n" + p.raw
+	}
+	if !p.structured() {
+		content = p.readCmdLine() + "\n\n" + content
 	}
 	p.vp.SetContent(wrapText(content, p.w))
 }
@@ -214,6 +223,7 @@ func (p *policyViewPage) listView() string {
 
 	var b strings.Builder
 	b.WriteString("  " + dimStyle.Render("PATH") + listInfo(p.cur, len(vis), rows, "paths") + "\n")
+	b.WriteString(p.readCmdLine() + "\n")
 	if fl := p.filt.view(); fl != "" {
 		b.WriteString(fl + "\n")
 	}
