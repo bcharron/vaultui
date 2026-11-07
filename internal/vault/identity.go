@@ -71,6 +71,12 @@ func ReadGroup(c *api.Client, name string) (map[string]interface{}, error) {
 	return readByName(c, "identity/group/name/", name)
 }
 
+// ReadGroupByID returns one group's properties by id, e.g. a group
+// alias's canonical_id.
+func ReadGroupByID(c *api.Client, id string) (map[string]interface{}, error) {
+	return readByName(c, "identity/group/id/", id)
+}
+
 func readByName(c *api.Client, path, name string) (map[string]interface{}, error) {
 	cc, cancel := ctx()
 	defer cancel()

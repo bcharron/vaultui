@@ -495,6 +495,20 @@ func identityDetail(cl *vaultapi.Client, title, readPath string, read func() (ma
 	return dp
 }
 
+// groupDetailByID builds the identity detail page for the group an
+// alias points to, read by id (the alias's canonical_id) rather than by
+// name. name is the group's display name when already known (from the
+// alias list); empty falls back to the id in the title.
+func groupDetailByID(cl *vaultapi.Client, id, name string) Page {
+	title := "group: " + name
+	if name == "" {
+		title = "group: " + id
+	}
+	return identityDetail(cl, title, "identity/group/id/"+id, func() (map[string]interface{}, error) {
+		return vault.ReadGroupByID(cl, id)
+	})
+}
+
 // identityExpansionLines renders an entity/group preview for the
 // expansion pane: the policies it grants, then its fields with nested
 // structures (aliases, metadata, ...) expanded as indented sections,

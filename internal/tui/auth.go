@@ -145,11 +145,14 @@ type authDetailPage struct {
 }
 
 // aliasesLoadedMsg delivers the group aliases of one auth method,
-// fetched by accessor from the identity store.
+// fetched by accessor from the identity store. groupNames maps each
+// alias's canonical_id to its group name; only the alias list page
+// resolves it, other consumers leave it nil.
 type aliasesLoadedMsg struct {
-	accessor string
-	aliases  []vault.GroupAlias
-	err      error
+	accessor   string
+	aliases    []vault.GroupAlias
+	groupNames map[string]string
+	err        error
 }
 
 type authTuneLoadedMsg struct {
@@ -294,7 +297,8 @@ func (p *authDetailPage) ensureAcfg() tea.Cmd {
 
 // enter opens the selected row: both config rows push their document;
 // the roles row pushes the roles' own list screen; the aliases row
-// pushes the group-alias document.
+// pushes the aliases' own list screen, where enter jumps to the group
+// identity each alias points to.
 func (p *authDetailPage) enter(r engineRow) tea.Cmd {
 	cl, m := p.cl, p.m
 	switch r.kind {
@@ -324,17 +328,7 @@ func (p *authDetailPage) enter(r engineRow) tea.Cmd {
 		}
 		return Push(dp)
 	case rowAliases:
-		dp := newDetailPage(
-			fmt.Sprintf("group aliases: auth/%s", strings.TrimSuffix(m.Path, "/")),
-			func() (string, []pageLink, error) {
-				aliases, err := vault.ListGroupAliasesByAccessor(cl, m.Accessor)
-				if err != nil {
-					return "", nil, err
-				}
-				return groupAliasesDoc(aliases), nil, nil
-			},
-		)
-		return Push(dp)
+		return Push(newAliasListPage(cl, m.Path, m.Accessor))
 	}
 	label := authRoleTabLabel(m.Type)
 	crumb := fmt.Sprintf("auth / %s / %s", strings.TrimSuffix(m.Path, "/"), strings.ToLower(label))
@@ -551,22 +545,4 @@ func (p *authDetailPage) Loading() bool {
 
 func (p *authDetailPage) Hints() string {
 	return "up/down select  enter open  / filter  r refresh  esc back  ctrl+l redraw  q quit"
-}
-
-// groupAliasesDoc renders the group aliases assigned to an auth
-// method's accessor: one labeled section per alias, with its read path
-// in the header so the data can be gathered manually.
-func groupAliasesDoc(aliases []vault.GroupAlias) string {
-	if len(aliases) == 0 {
-		return "(no group aliases on this accessor)"
-	}
-	var b strings.Builder
-	for i, a := range aliases {
-		if i > 0 {
-			b.WriteString("\n\n")
-		}
-		fmt.Fprintf(&b, "%s\n", dimStyle.Render("-- identity/group-alias/id/"+a.ID+" --"))
-		b.WriteString(formatMap(a.Data))
-	}
-	return b.String()
 }

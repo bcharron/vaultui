@@ -404,14 +404,20 @@ func TestEndToEnd(t *testing.T) {
 	m = typeKeys(t, m, "esc", "esc", "esc", "esc", "esc", "esc") // policy -> role -> roles -> auth detail -> auth list -> home
 	wantView(t, m, "Secret Engines")
 
-	// jwt: the Group Aliases row lists the aliases on the accessor
+	// jwt: the Group Aliases row opens the aliases list, each row
+	// showing its group; enter jumps to the group identity
 	m = openAuth(t, m, cl, "jwt/")
 	wantView(t, m, "Config (tune)", "Auth Config", "Roles", "Group Aliases")
 	m = typeKeys(t, m, "down", "down", "down") // the Group Aliases row; the expansion fetches them
 	wantView(t, m, "eng-admin")
-	m = typeKeys(t, m, "enter") // the aliases document
-	wantView(t, m, "group aliases: auth/jwt", "identity/group-alias/id/", "eng-admin", "canonical_id:")
-	m = typeKeys(t, m, "esc", "esc") // doc -> auth detail -> auth list
+	m = typeKeys(t, m, "enter") // the aliases list: alias -> group
+	wantView(t, m, "ALIAS", "GROUP", "eng-admin", "eng-external")
+	m = typeKeys(t, m, "/", "e", "x", "t", "e", "r", "n", "a", "l") // matches the group name, not the alias name
+	wantView(t, m, "eng-admin")
+	m = typeKeys(t, m, "esc")   // clear the filter
+	m = typeKeys(t, m, "enter") // jump to the group identity by canonical id
+	wantView(t, m, "group: eng-external", "vault read identity/group/id/", "linked policies:", "[1] jwt-reader", "eng-admin")
+	m = typeKeys(t, m, "esc", "esc", "esc") // group -> aliases -> auth detail -> auth list
 
 	// AppRole: the role document lists the secret-ids issued for it
 	m = openAuth(t, m, cl, "approle/")
@@ -425,6 +431,9 @@ func TestEndToEnd(t *testing.T) {
 	m = typeKeys(t, m, "esc")  // back to the auth detail
 	m = typeKeys(t, m, "down") // the Group Aliases row: the approle accessor has none
 	wantView(t, m, "Group Aliases  (none)")
+	m = typeKeys(t, m, "enter") // the aliases list: empty
+	wantView(t, m, "no group aliases on this auth method")
+	m = typeKeys(t, m, "esc")        // aliases -> auth detail
 	m = typeKeys(t, m, "esc", "esc") // auth detail -> auth list -> home
 	wantView(t, m, "Secret Engines")
 
