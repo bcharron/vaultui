@@ -73,3 +73,36 @@ func TestFilterKeys(t *testing.T) {
 		t.Error("navigation keys must fall through to the page")
 	}
 }
+
+func TestFilterPaste(t *testing.T) {
+	var f filter
+	f.active = true
+	if !f.update(tea.KeyMsg{Type: tea.KeyRunes, Paste: true, Runes: []rune("secret/")}) {
+		t.Error("paste should be handled by the filter")
+	}
+	if f.q != "secret/" {
+		t.Errorf("query after paste = %q, want %q", f.q, "secret/")
+	}
+	// control characters in pasted text are dropped, not treated as keys
+	if !f.update(tea.KeyMsg{Type: tea.KeyRunes, Paste: true, Runes: []rune("a\nb\x7f")}) {
+		t.Error("paste should be handled by the filter")
+	}
+	if f.q != "secret/ab" {
+		t.Errorf("query after paste with control chars = %q, want %q", f.q, "secret/ab")
+	}
+	// a single-character paste is inserted too (String() wraps it in "[]")
+	if !f.update(tea.KeyMsg{Type: tea.KeyRunes, Paste: true, Runes: []rune("x")}) {
+		t.Error("single-char paste should be handled by the filter")
+	}
+	if f.q != "secret/abx" {
+		t.Errorf("query after single-char paste = %q, want %q", f.q, "secret/abx")
+	}
+	// paste falls through when the filter is closed
+	f.active = false
+	if f.update(tea.KeyMsg{Type: tea.KeyRunes, Paste: true, Runes: []rune("y")}) {
+		t.Error("paste must fall through when the filter is not active")
+	}
+	if f.q != "secret/abx" {
+		t.Errorf("query changed while filter closed: %q", f.q)
+	}
+}

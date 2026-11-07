@@ -28,6 +28,16 @@ func (f *filter) update(msg tea.Msg) bool {
 	if !ok || !f.active {
 		return false
 	}
+	if key.Paste {
+		// Bracketed paste (e.g. shift+insert) arrives as a single
+		// KeyMsg; insert the text, keeping only printable runes.
+		for _, r := range key.Runes {
+			if r >= 0x20 && r != 0x7f {
+				f.q += string(r)
+			}
+		}
+		return true
+	}
 	switch key.String() {
 	case "esc":
 		f.active = false
